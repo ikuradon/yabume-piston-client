@@ -13,7 +13,14 @@ const PRIVATE_KEY_HEX = process.env.PRIVATE_KEY_HEX;
 
 const pistonClient = piston({ server: PISTON_SERVER });
 const runtimes = await pistonClient.runtimes();
-const languages = runtimes.map(x => x.language);
+const languages = [
+    ...new Set(
+        [...runtimes]
+            .sort((l, r) => l.language.localeCompare(r.language))
+            .map(x => [x.language, ...x.aliases])
+            .flat()
+    )
+];
 
 const executePiston = async content => {
     const contentArray = content.match(/[^\r\n]+/g);
