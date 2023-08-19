@@ -10,6 +10,7 @@ import piston from "piston-client";
 const PISTON_SERVER = process.env.PISTON_SERVER;
 const RELAY_URL = process.env.RELAY_URL || "wss://yabu.me";
 const PRIVATE_KEY_HEX = process.env.PRIVATE_KEY_HEX;
+const COOL_TIME_DUR_SEC = 5;
 
 const pistonClient = piston({ server: PISTON_SERVER });
 const runtimes = await pistonClient.runtimes();
@@ -73,8 +74,11 @@ const publishToRelay = (relay, ev) => {
     const sub = relay.sub([{ kinds: [1], since: getUnixTime(new Date()) }]);
 
     sub.on("event", async ev => {
-        if (!ev.content.startsWith("/run"))
-            return
+        if (
+            ev.created_at < getUnixTime(new Date()) - COOL_TIME_DUR_SEC ||
+            !ev.content.startsWith("/run")
+        )
+            return false;
 
         console.log("Exec");
         const message = await executePiston(ev.content);
