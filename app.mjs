@@ -52,14 +52,10 @@ const composeReplyPost = (content, targetEvent, created_at = getUnixTime(new Dat
     return finishEvent(ev, PRIVATE_KEY_HEX);
 };
 
-const publishToRelay = (relay, ev) => {
-    const pub = relay.publish(ev);
-    pub.on("ok", () => {
-        console.log("post ok");
-    });
-    pub.on("failed", () => {
-        console.log("post error");
-    });
+const publishToRelay = async (relay, ev) => {
+    await relay.publish(ev)
+        .then(() => console.log("post ok"))
+        .catch(e => console.log(`post error: ${e}`));
 };
 
 (async _ => {
@@ -80,10 +76,9 @@ const publishToRelay = (relay, ev) => {
         )
             return false;
 
-        console.log("Exec");
         const message = await executePiston(ev.content);
         const replyPost = composeReplyPost(message, ev);
-        publishToRelay(relay, replyPost);
+        await publishToRelay(relay, replyPost);
     });
 
 })().catch(e => console.error(e));
