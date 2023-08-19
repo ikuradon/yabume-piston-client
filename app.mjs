@@ -23,7 +23,11 @@ const executePiston = async content => {
         return "Language not found.";
     const code = contentArray.join("\n");
     const result = await pistonClient.execute(language, code);
-    return result.run ? result.run.output : "Execution error";
+
+    if (!!result.compile && !!result.compile.code)
+        return result.compile.output;
+    else
+        return !!result.run ? result.run.output : "Execution error";
 }
 
 const composeReplyPost = (content, targetEvent, created_at = getUnixTime(new Date()) + 1) => {
