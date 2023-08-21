@@ -14,23 +14,22 @@ const ACCEPT_DUR_SEC = 1 * 60;
 
 const pistonClient = piston({ server: PISTON_SERVER });
 const runtimes = await pistonClient.runtimes();
-const languages = [
-    ...new Set(
-        [...runtimes]
-            .sort((l, r) => l.language.localeCompare(r.language))
-            .map(x => [x.language, ...x.aliases])
-            .flat()
-    )
-];
+const languages = {};
+
+runtimes.forEach(runtime => {
+    languages[runtime.language] = runtime.language;
+    if (!!runtime.aliases)
+        runtime.aliases.forEach(alias => languages[alias] = runtime.language);
+});
 
 const executePiston = async content => {
     const contentArray = content.match(/[^\r\n]+/g);
     const language = contentArray.shift(1).replace("/run", "").trim();
     console.log(language);
-    if (!languages.includes(language))
+    if (!languages[language])
         return "Language not found.";
     const code = contentArray.join("\n");
-    const result = await pistonClient.execute(language, code);
+    const result = await pistonClient.execute(languages[language], code);
 
     if (!!result.compile && !!result.compile.code)
         return result.compile.output;
