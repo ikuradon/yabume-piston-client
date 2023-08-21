@@ -34,7 +34,7 @@ const executePiston = async content => {
     if (!!result.compile && !!result.compile.code)
         return result.compile.output;
     else
-        return !!result.run ? result.run.output : "Execution error";
+        return !!result.run ? result.run.output : !!result.message ? result.message : "Execution error";
 }
 
 const composeReplyPost = (content, targetEvent, created_at = getUnixTime(new Date()) + 1) => {
