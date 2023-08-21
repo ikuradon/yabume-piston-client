@@ -17,9 +17,15 @@ const runtimes = await pistonClient.runtimes();
 const languages = {};
 
 runtimes.forEach(runtime => {
-    languages[runtime.language] = runtime.language;
+    languages[runtime.language] = {};
+    languages[runtime.language].language = runtime.language;
+    languages[runtime.language].version = runtime.version;
     if (!!runtime.aliases)
-        runtime.aliases.forEach(alias => languages[alias] = runtime.language);
+        runtime.aliases.forEach(alias => {
+            languages[alias] = {};
+            languages[alias].language = runtime.language;
+            languages[alias].version = runtime.version;
+        });
 });
 
 const executePiston = async content => {
@@ -29,7 +35,17 @@ const executePiston = async content => {
     if (!languages[language])
         return "Language not found.";
     const code = contentArray.join("\n");
-    const result = await pistonClient.execute(languages[language], code);
+    const result = await pistonClient.execute({
+        language: languages[language].language,
+        version: languages[language].version,
+        files: [
+            {
+                content: code,
+            },
+        ],
+        "compile_timeout": 10000,
+        "run_timeout": 10000,
+    });
 
     if (!!result.compile && !!result.compile.code)
         return result.compile.output;
