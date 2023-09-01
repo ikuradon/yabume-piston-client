@@ -35,16 +35,20 @@ const executePiston = async content => {
     if (!languages[language])
         return "Language not found.";
     const code = contentArray.join("\n");
+
+    const script = {};
+    script.content = code;
+    if (languages[language].language === "emojicode")
+        script.name = "file0.emojic";
+
     const result = await pistonClient.execute({
         language: languages[language].language,
         version: languages[language].version,
         files: [
-            {
-                content: code,
-            },
+            script,
         ],
-        "compile_timeout": 10000,
-        "run_timeout": 10000,
+        compile_timeout: 10000,
+        run_timeout: 10000,
     });
 
     if (!!result.compile && !!result.compile.code)
