@@ -28,10 +28,20 @@ runtimes.forEach((runtime) => {
     });
 });
 
+const helpMessage =
+  "I RUN C0DE.\n" +
+  "Use as follows: \n" +
+  "\n" +
+  "/run nodejs\n" +
+  'console.log("Hello world!");\n' +
+  "\n" +
+  `Supported languages: ${Object.keys(languages).join()}`;
+
 const executePiston = async (content) => {
   const contentArray = content.match(/[^\r\n]+/g);
   const language = contentArray.shift(1).replace("/run", "").trim();
   console.log(language);
+  if (language === "help") return helpMessage;
   if (!languages[language]) return "Language not found.";
   const code = contentArray.join("\n");
 
