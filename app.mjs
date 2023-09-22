@@ -1,6 +1,6 @@
 import "dotenv/config";
 
-import { finishEvent, relayInit } from "nostr-tools";
+import { finishEvent, getPublicKey, relayInit } from "nostr-tools";
 import "websocket-polyfill";
 
 import { getUnixTime } from "date-fns";
@@ -116,6 +116,7 @@ const getSourceEvent = async (relay, event) => {
 
   sub.on("event", async (ev) => {
     if (ev.created_at < getUnixTime(new Date()) - ACCEPT_DUR_SEC) return false;
+    if (ev.pubkey === getPublicKey(PRIVATE_KEY_HEX)) return false; // 自分の投稿は無視する
 
     if (ev.content.startsWith("/run")) {
       console.log("/run");
