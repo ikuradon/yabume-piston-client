@@ -79,7 +79,7 @@ const composeReplyPost = (
       ["e", targetEvent.id],
       ["p", targetEvent.pubkey],
     ],
-    created_at: created_at,
+    created_at: created_at + 1,
   };
 
   return finishEvent(ev, PRIVATE_KEY_HEX);
