@@ -67,11 +67,7 @@ const executePiston = async (content) => {
       : "Execution error";
 };
 
-const composeReplyPost = (
-  content,
-  targetEvent,
-  created_at = getUnixTime(new Date()) + 1
-) => {
+const composeReplyPost = (content, targetEvent) => {
   const ev = {
     kind: 1,
     content: content,
@@ -79,7 +75,7 @@ const composeReplyPost = (
       ["e", targetEvent.id],
       ["p", targetEvent.pubkey],
     ],
-    created_at: created_at + 1,
+    created_at: targetEvent.created_at + 1,
   };
 
   return finishEvent(ev, PRIVATE_KEY_HEX);
