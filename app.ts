@@ -7,6 +7,7 @@ import piston from "npm:piston-client@^1.0.2";
 import {
   buildLanguageMap,
   buildHelpMessage,
+  buildLanguageListMessage,
   buildScript,
   parseRunCommand,
   parseRerunCommand,
@@ -25,7 +26,7 @@ const unixNow = () => Math.floor(Date.now() / 1000);
 const pistonClient = piston({ server: PISTON_SERVER });
 const runtimes = await pistonClient.runtimes();
 const languages = buildLanguageMap(runtimes);
-const helpMessage = buildHelpMessage(languages);
+const helpMessage = buildHelpMessage();
 
 const executePiston = async (
   content: string,
@@ -37,7 +38,9 @@ const executePiston = async (
   const { language, code, args, stdin } = parsed;
   console.log(language);
   if (language === "help") return helpMessage;
-  if (!languages[language]) return "Language not found.";
+  if (language === "lang") return buildLanguageListMessage(languages);
+  if (!languages[language])
+    return "Language not found.\n\n" + buildLanguageListMessage(languages);
 
   const script = buildScript(code, languages, language);
 

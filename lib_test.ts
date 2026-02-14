@@ -8,6 +8,7 @@ import { getPublicKey } from "npm:nostr-tools@^1.14.0";
 import {
   buildLanguageMap,
   buildHelpMessage,
+  buildLanguageListMessage,
   parseRunCommand,
   parseRerunCommand,
   buildScript,
@@ -72,23 +73,42 @@ Deno.test("buildLanguageMap - 空のエイリアス配列を処理できる", ()
 // buildHelpMessage
 // ============================================================
 
-Deno.test("buildHelpMessage - ヘルプメッセージに言語一覧が含まれる", () => {
-  const languages: Record<string, LanguageEntry> = {
-    javascript: { language: "javascript", version: "18.15.0" },
-    python: { language: "python", version: "3.10.0" },
-  };
-  const message = buildHelpMessage(languages);
+Deno.test("buildHelpMessage - ヘルプメッセージに /run lang 案内が含まれる", () => {
+  const message = buildHelpMessage();
 
   assertEquals(message.includes("I RUN C0DE."), true);
   assertEquals(message.includes("/run <language>"), true);
   assertEquals(message.includes("Basic Syntax:"), true);
   assertEquals(message.includes("Legacy Syntax:"), true);
-  assertEquals(message.includes("javascript,python"), true);
+  assertEquals(message.includes("/run lang"), true);
 });
 
-Deno.test("buildHelpMessage - 言語が空でもエラーにならない", () => {
-  const message = buildHelpMessage({});
-  assertEquals(message.includes("Supported languages: "), true);
+Deno.test("buildHelpMessage - Rerun セクションに args/stdin 書式が含まれる", () => {
+  const message = buildHelpMessage();
+
+  assertEquals(message.includes("Rerun:"), true);
+  assertEquals(message.includes("---"), true);
+});
+
+// ============================================================
+// buildLanguageListMessage
+// ============================================================
+
+Deno.test("buildLanguageListMessage - 言語一覧を返す", () => {
+  const languages: Record<string, LanguageEntry> = {
+    javascript: { language: "javascript", version: "18.15.0" },
+    python: { language: "python", version: "3.10.0" },
+  };
+  const message = buildLanguageListMessage(languages);
+
+  assertEquals(message.includes("Supported languages:"), true);
+  assertEquals(message.includes("javascript"), true);
+  assertEquals(message.includes("python"), true);
+});
+
+Deno.test("buildLanguageListMessage - 言語が空でもエラーにならない", () => {
+  const message = buildLanguageListMessage({});
+  assertEquals(message, "Supported languages:\n");
 });
 
 // ============================================================
@@ -123,6 +143,17 @@ Deno.test("parseRunCommand - help コマンドをパースできる", () => {
 
   assertExists(result);
   assertEquals(result!.language, "help");
+  assertEquals(result!.code, "");
+  assertEquals(result!.args, []);
+  assertEquals(result!.stdin, "");
+});
+
+Deno.test("parseRunCommand - lang コマンドをパースできる", () => {
+  const content = "/run lang";
+  const result = parseRunCommand(content);
+
+  assertExists(result);
+  assertEquals(result!.language, "lang");
   assertEquals(result!.code, "");
   assertEquals(result!.args, []);
   assertEquals(result!.stdin, "");

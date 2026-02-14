@@ -34,9 +34,7 @@ export const buildLanguageMap = (
   return languages;
 };
 
-export const buildHelpMessage = (
-  languages: Record<string, LanguageEntry>,
-): string => {
+export const buildHelpMessage = (): string => {
   return (
     "I RUN C0DE.\n" +
     "\n" +
@@ -54,9 +52,19 @@ export const buildHelpMessage = (
     "\n" +
     "Rerun:\n" +
     "/rerun\n" +
+    "<args (optional, one per line)>\n" +
+    "---\n" +
+    "<stdin (optional)>\n" +
     "\n" +
-    `Supported languages: ${Object.keys(languages).join()}`
+    "Language List:\n" +
+    "/run lang"
   );
+};
+
+export const buildLanguageListMessage = (
+  languages: Record<string, LanguageEntry>,
+): string => {
+  return `Supported languages:\n${Object.keys(languages).join(", ")}`;
 };
 
 export const parseRunCommand = (
