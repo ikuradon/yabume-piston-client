@@ -1,6 +1,7 @@
 # yabume-piston-client
 
-Nostr bot that executes code via [Piston API](https://github.com/engineer-man/piston).
+Nostr bot that executes code via
+[Piston API](https://github.com/engineer-man/piston).
 
 ## Commands
 
@@ -49,11 +50,11 @@ Show supported languages.
 
 ### Environment Variables
 
-| Variable | Description | Default |
-|---|---|---|
-| `PISTON_SERVER` | Piston API server URL | (required) |
-| `RELAY_URL` | Nostr relay WebSocket URL | `wss://yabu.me` |
-| `PRIVATE_KEY_HEX` | Nostr private key (hex) | (required) |
+| Variable          | Description               | Default         |
+| ----------------- | ------------------------- | --------------- |
+| `PISTON_SERVER`   | Piston API server URL     | (required)      |
+| `RELAY_URL`       | Nostr relay WebSocket URL | `wss://yabu.me` |
+| `PRIVATE_KEY_HEX` | Nostr private key (hex)   | (required)      |
 
 Create a `.env` file or export the variables.
 

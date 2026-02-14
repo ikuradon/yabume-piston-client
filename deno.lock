@@ -8,7 +8,8 @@
     "jsr:@std/internal@^1.0.12": "1.0.12",
     "npm:@noble/curves@2.0.1": "2.0.1",
     "npm:@noble/hashes@2.0.1": "2.0.1",
-    "npm:nostr-tools@^1.14.0": "1.17.0"
+    "npm:nostr-tools@^1.14.0": "1.17.0",
+    "npm:piston-client@^1.0.2": "1.0.2"
   },
   "jsr": {
     "@noble/hashes@2.0.1": {
@@ -74,6 +75,12 @@
         "@scure/base"
       ]
     },
+    "node-fetch@2.7.0": {
+      "integrity": "sha512-c4FRfUm/dbcWZ7U+1Wq0AwCyFL+3nt2bEw05wfxSz+DWpWsitgmSgYmy2dQdWyKC1694ELPqMs/YzUSNozLt8A==",
+      "dependencies": [
+        "whatwg-url"
+      ]
+    },
     "nostr-tools@1.17.0": {
       "integrity": "sha512-LZmR8GEWKZeElbFV5Xte75dOeE9EFUW/QLI1Ncn3JKn0kFddDKEfBbFN8Mu4TMs+L4HR/WTPha2l+PPuRnJcMw==",
       "dependencies": [
@@ -84,6 +91,25 @@
         "@scure/bip32",
         "@scure/bip39"
       ]
+    },
+    "piston-client@1.0.2": {
+      "integrity": "sha512-kQreSVVYTk0SFIYm1nCIKQtiodPCAxPjwAvZyWKkW3fMFbn7HONyYWIPoGVx2xXf5SFD29CbgSRCN3k+LP7mCg==",
+      "dependencies": [
+        "node-fetch"
+      ]
+    },
+    "tr46@0.0.3": {
+      "integrity": "sha512-N3WMsuqV66lT30CrXNbEjx4GEwlow3v6rr4mCcv6prnfwhS01rkgyFdjPNBYd9br7LpXV1+Emh01fHnq2Gdgrw=="
+    },
+    "webidl-conversions@3.0.1": {
+      "integrity": "sha512-2JAn3z8AR6rjK8Sm8orRC0h/bcl/DqL7tRPdGZ4I1CjdF+EaMLmYxBHyXuKL849eucPFhvBoxMsflfOb8kxaeQ=="
+    },
+    "whatwg-url@5.0.0": {
+      "integrity": "sha512-saE57nupxk6v3HY35+jzBwYa0rKSy0XR8JSxZPwgLr7ys0IBzhGviA1/TUGJLmSVqs8pb9AnvICXEuOHLprYTw==",
+      "dependencies": [
+        "tr46",
+        "webidl-conversions"
+      ]
     }
   },
   "workspace": {
@@ -91,7 +117,8 @@
       "jsr:@noble/hashes@^2.0.1",
       "jsr:@nostr/tools@^2.23.1",
       "jsr:@std/assert@1",
-      "jsr:@std/dotenv@0.225"
+      "jsr:@std/dotenv@0.225",
+      "npm:piston-client@^1.0.2"
     ]
   }
 }

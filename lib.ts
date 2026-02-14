@@ -24,13 +24,14 @@ export const buildLanguageMap = (
       language: runtime.language,
       version: runtime.version,
     };
-    if (!!runtime.aliases)
+    if (runtime.aliases) {
       runtime.aliases.forEach((alias) => {
         languages[alias] = {
           language: runtime.language,
           version: runtime.version,
         };
       });
+    }
   });
   return languages;
 };
@@ -122,20 +123,22 @@ export const buildScript = (
   language: string,
 ): { content: string; name?: string } => {
   const script: { content: string; name?: string } = { content: code };
-  if (languages[language].language === "emojicode")
+  if (languages[language].language === "emojicode") {
     script.name = "file0.emojic";
+  }
   return script;
 };
 
 // deno-lint-ignore no-explicit-any
 export const formatExecutionResult = (result: any): string => {
-  if (!!result.compile && !!result.compile.code) return result.compile.output;
-  else
-    return !!result.run
+  if (result.compile && result.compile.code) return result.compile.output;
+  else {
+    return result.run
       ? result.run.output
-      : !!result.message
-        ? result.message
-        : "Execution error";
+      : result.message
+      ? result.message
+      : "Execution error";
+  }
 };
 
 export const composeReplyPost = (

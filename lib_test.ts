@@ -1,28 +1,23 @@
-import {
-  assertEquals,
-  assertExists,
-  assertNotEquals,
-} from "@std/assert";
+import { assertEquals, assertExists, assertNotEquals } from "@std/assert";
 import { getPublicKey } from "@nostr/tools/pure";
 import { hexToBytes } from "@noble/hashes/utils.js";
 
 import {
-  buildLanguageMap,
   buildHelpMessage,
   buildLanguageListMessage,
-  parseRunCommand,
-  parseRerunCommand,
+  buildLanguageMap,
   buildScript,
-  formatExecutionResult,
   composeReplyPost,
+  formatExecutionResult,
   getSourceEvent,
-  type Runtime,
   type LanguageEntry,
+  parseRerunCommand,
+  parseRunCommand,
+  type Runtime,
 } from "./lib.ts";
 
 // テスト用の秘密鍵（テスト専用、本番には使用しないこと）
-const TEST_PRIVATE_KEY =
-  "a".repeat(64);
+const TEST_PRIVATE_KEY = "a".repeat(64);
 
 // ============================================================
 // buildLanguageMap
@@ -263,7 +258,11 @@ Deno.test("composeReplyPost - 正しい構造のイベントを生成する", ()
     created_at: 1700000000,
   };
 
-  const event = composeReplyPost("reply content", targetEvent, TEST_PRIVATE_KEY);
+  const event = composeReplyPost(
+    "reply content",
+    targetEvent,
+    TEST_PRIVATE_KEY,
+  );
 
   assertEquals(event.kind, 1);
   assertEquals(event.content, "reply content");
@@ -370,7 +369,8 @@ Deno.test("parseRunCommand - Basic Syntax: コードブロック＋argsのみ", 
 });
 
 Deno.test("parseRunCommand - Basic Syntax: コードブロック＋args＋stdin", () => {
-  const content = "/run python\narg1\narg2\n```\nprint(input())\n```\nhello world";
+  const content =
+    "/run python\narg1\narg2\n```\nprint(input())\n```\nhello world";
   const result = parseRunCommand(content);
 
   assertExists(result);

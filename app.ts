@@ -4,18 +4,18 @@ import { getPublicKey } from "@nostr/tools/pure";
 import { Relay } from "@nostr/tools/relay";
 import { hexToBytes } from "@noble/hashes/utils.js";
 
-import piston from "npm:piston-client@^1.0.2";
+import piston from "piston-client";
 
 import {
-  buildLanguageMap,
   buildHelpMessage,
   buildLanguageListMessage,
+  buildLanguageMap,
   buildScript,
-  parseRunCommand,
-  parseRerunCommand,
-  formatExecutionResult,
   composeReplyPost,
+  formatExecutionResult,
   getSourceEvent,
+  parseRerunCommand,
+  parseRunCommand,
 } from "./lib.ts";
 
 const PISTON_SERVER = Deno.env.get("PISTON_SERVER");
@@ -41,8 +41,9 @@ const executePiston = async (
   console.log(language);
   if (language === "help") return helpMessage;
   if (language === "lang") return buildLanguageListMessage(languages);
-  if (!languages[language])
+  if (!languages[language]) {
     return "Language not found.\n\n" + buildLanguageListMessage(languages);
+  }
 
   const script = buildScript(code, languages, language);
 
