@@ -9,6 +9,7 @@ import {
   buildHelpMessage,
   buildScript,
   parseRunCommand,
+  parseRerunCommand,
   formatExecutionResult,
   composeReplyPost,
   getSourceEvent,
@@ -26,10 +27,14 @@ const runtimes = await pistonClient.runtimes();
 const languages = buildLanguageMap(runtimes);
 const helpMessage = buildHelpMessage(languages);
 
-const executePiston = async (content: string): Promise<string> => {
+const executePiston = async (
+  content: string,
+  argsOverride?: string[],
+  stdinOverride?: string,
+): Promise<string> => {
   const parsed = parseRunCommand(content);
   if (!parsed) return "Execution error";
-  const { language, code } = parsed;
+  const { language, code, args, stdin } = parsed;
   console.log(language);
   if (language === "help") return helpMessage;
   if (!languages[language]) return "Language not found.";
@@ -40,6 +45,8 @@ const executePiston = async (content: string): Promise<string> => {
     language: languages[language].language,
     version: languages[language].version,
     files: [script],
+    args: argsOverride ?? args,
+    stdin: stdinOverride ?? stdin,
     compile_timeout: 10000,
     run_timeout: 10000,
   });
@@ -79,6 +86,7 @@ try {
       await publishToRelay(relay, replyPost);
     } else if (ev.content.startsWith("/rerun")) {
       console.log("/rerun");
+      const { args, stdin } = parseRerunCommand(ev.content);
       let sourceEvent = ev;
       while (true) {
         sourceEvent = await getSourceEvent(relay, sourceEvent);
@@ -89,7 +97,11 @@ try {
         }
       }
       if (sourceEvent !== null && sourceEvent.content.startsWith("/run")) {
-        const message = await executePiston(sourceEvent.content);
+        const message = await executePiston(
+          sourceEvent.content,
+          args.length > 0 ? args : undefined,
+          stdin !== "" ? stdin : undefined,
+        );
         const replyPost = composeReplyPost(message, ev, PRIVATE_KEY_HEX);
         await publishToRelay(relay, replyPost);
       }

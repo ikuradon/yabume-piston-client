@@ -9,6 +9,7 @@ import {
   buildLanguageMap,
   buildHelpMessage,
   parseRunCommand,
+  parseRerunCommand,
   buildScript,
   formatExecutionResult,
   composeReplyPost,
@@ -79,7 +80,9 @@ Deno.test("buildHelpMessage - ヘルプメッセージに言語一覧が含ま�
   const message = buildHelpMessage(languages);
 
   assertEquals(message.includes("I RUN C0DE."), true);
-  assertEquals(message.includes("/run nodejs"), true);
+  assertEquals(message.includes("/run <language>"), true);
+  assertEquals(message.includes("Basic Syntax:"), true);
+  assertEquals(message.includes("Legacy Syntax:"), true);
   assertEquals(message.includes("javascript,python"), true);
 });
 
@@ -92,22 +95,26 @@ Deno.test("buildHelpMessage - 言語が空でもエラーにならない", () =>
 // parseRunCommand
 // ============================================================
 
-Deno.test("parseRunCommand - /run コマンドを正しくパースできる", () => {
+Deno.test("parseRunCommand - /run コマンドを正しくパースできる (Legacy)", () => {
   const content = "/run javascript\nconsole.log('hello');";
   const result = parseRunCommand(content);
 
   assertExists(result);
   assertEquals(result!.language, "javascript");
   assertEquals(result!.code, "console.log('hello');");
+  assertEquals(result!.args, []);
+  assertEquals(result!.stdin, "");
 });
 
-Deno.test("parseRunCommand - 複数行のコードをパースできる", () => {
+Deno.test("parseRunCommand - 複数行のコードをパースできる (Legacy)", () => {
   const content = "/run python\nprint('line1')\nprint('line2')\nprint('line3')";
   const result = parseRunCommand(content);
 
   assertExists(result);
   assertEquals(result!.language, "python");
   assertEquals(result!.code, "print('line1')\nprint('line2')\nprint('line3')");
+  assertEquals(result!.args, []);
+  assertEquals(result!.stdin, "");
 });
 
 Deno.test("parseRunCommand - help コマンドをパースできる", () => {
@@ -117,6 +124,8 @@ Deno.test("parseRunCommand - help コマンドをパースできる", () => {
   assertExists(result);
   assertEquals(result!.language, "help");
   assertEquals(result!.code, "");
+  assertEquals(result!.args, []);
+  assertEquals(result!.stdin, "");
 });
 
 Deno.test("parseRunCommand - コードなしの場合コードが空文字列になる", () => {
@@ -126,6 +135,8 @@ Deno.test("parseRunCommand - コードなしの場合コードが空文字列に
   assertExists(result);
   assertEquals(result!.language, "javascript");
   assertEquals(result!.code, "");
+  assertEquals(result!.args, []);
+  assertEquals(result!.stdin, "");
 });
 
 Deno.test("parseRunCommand - 空文字列で null を返す", () => {
@@ -299,4 +310,102 @@ Deno.test("getSourceEvent - 複数の e タグがある場合最後のものを�
 
   const result = await getSourceEvent(mockRelay, event);
   assertEquals(result, referenceEvent);
+});
+
+// ============================================================
+// parseRunCommand - Basic Syntax (コードブロック記法)
+// ============================================================
+
+Deno.test("parseRunCommand - Basic Syntax: コードブロック＋argsのみ", () => {
+  const content = "/run python\narg1\narg2\n```\nprint('hello')\n```";
+  const result = parseRunCommand(content);
+
+  assertExists(result);
+  assertEquals(result!.language, "python");
+  assertEquals(result!.args, ["arg1", "arg2"]);
+  assertEquals(result!.code, "print('hello')");
+  assertEquals(result!.stdin, "");
+});
+
+Deno.test("parseRunCommand - Basic Syntax: コードブロック＋args＋stdin", () => {
+  const content = "/run python\narg1\narg2\n```\nprint(input())\n```\nhello world";
+  const result = parseRunCommand(content);
+
+  assertExists(result);
+  assertEquals(result!.language, "python");
+  assertEquals(result!.args, ["arg1", "arg2"]);
+  assertEquals(result!.code, "print(input())");
+  assertEquals(result!.stdin, "hello world");
+});
+
+Deno.test("parseRunCommand - Basic Syntax: コードブロック＋stdinのみ（argsなし）", () => {
+  const content = "/run python\n```\nprint(input())\n```\ntest input";
+  const result = parseRunCommand(content);
+
+  assertExists(result);
+  assertEquals(result!.language, "python");
+  assertEquals(result!.args, []);
+  assertEquals(result!.code, "print(input())");
+  assertEquals(result!.stdin, "test input");
+});
+
+Deno.test("parseRunCommand - Basic Syntax: コードブロックのみ（args/stdinなし）", () => {
+  const content = "/run python\n```\nprint('hello')\n```";
+  const result = parseRunCommand(content);
+
+  assertExists(result);
+  assertEquals(result!.language, "python");
+  assertEquals(result!.args, []);
+  assertEquals(result!.code, "print('hello')");
+  assertEquals(result!.stdin, "");
+});
+
+Deno.test("parseRunCommand - Basic Syntax: 複数行コード", () => {
+  const content = "/run python\n```\nfor i in range(3):\n    print(i)\n```";
+  const result = parseRunCommand(content);
+
+  assertExists(result);
+  assertEquals(result!.language, "python");
+  assertEquals(result!.code, "for i in range(3):\n    print(i)");
+  assertEquals(result!.args, []);
+  assertEquals(result!.stdin, "");
+});
+
+// ============================================================
+// parseRerunCommand
+// ============================================================
+
+Deno.test("parseRerunCommand - /rerun のみ（argsもstdinもなし）", () => {
+  const result = parseRerunCommand("/rerun");
+
+  assertEquals(result.args, []);
+  assertEquals(result.stdin, "");
+});
+
+Deno.test("parseRerunCommand - argsのみ", () => {
+  const result = parseRerunCommand("/rerun\narg1\narg2");
+
+  assertEquals(result.args, ["arg1", "arg2"]);
+  assertEquals(result.stdin, "");
+});
+
+Deno.test("parseRerunCommand - args + stdin（--- 区切り）", () => {
+  const result = parseRerunCommand("/rerun\narg1\narg2\n---\nhello world");
+
+  assertEquals(result.args, ["arg1", "arg2"]);
+  assertEquals(result.stdin, "hello world");
+});
+
+Deno.test("parseRerunCommand - stdinのみ（--- 区切り）", () => {
+  const result = parseRerunCommand("/rerun\n---\nhello world");
+
+  assertEquals(result.args, []);
+  assertEquals(result.stdin, "hello world");
+});
+
+Deno.test("parseRerunCommand - 複数行stdin", () => {
+  const result = parseRerunCommand("/rerun\n---\nline1\nline2\nline3");
+
+  assertEquals(result.args, []);
+  assertEquals(result.stdin, "line1\nline2\nline3");
 });
