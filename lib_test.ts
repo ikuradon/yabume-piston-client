@@ -3,7 +3,8 @@ import {
   assertExists,
   assertNotEquals,
 } from "@std/assert";
-import { getPublicKey } from "npm:nostr-tools@^1.14.0";
+import { getPublicKey } from "@nostr/tools/pure";
+import { hexToBytes } from "@noble/hashes/utils.js";
 
 import {
   buildLanguageMap,
@@ -284,7 +285,7 @@ Deno.test("composeReplyPost - イベントに署名が付与される", () => {
   assertExists(event.sig);
   assertNotEquals(event.sig, "");
   assertExists(event.id);
-  assertEquals(event.pubkey, getPublicKey(TEST_PRIVATE_KEY));
+  assertEquals(event.pubkey, getPublicKey(hexToBytes(TEST_PRIVATE_KEY)));
 });
 
 // ============================================================
@@ -293,7 +294,7 @@ Deno.test("composeReplyPost - イベントに署名が付与される", () => {
 
 Deno.test("getSourceEvent - e タグがない場合は null を返す", async () => {
   const mockRelay = {
-    get: () => Promise.resolve(null),
+    subscribe: () => ({ close: () => {} }),
   };
   const event = {
     tags: [["p", "somepubkey"]],
@@ -310,9 +311,14 @@ Deno.test("getSourceEvent - e タグから参照イベントを取得できる",
     tags: [],
   };
   const mockRelay = {
-    get: (filter: { ids: string[] }) => {
-      assertEquals(filter.ids, ["ref123"]);
-      return Promise.resolve(referenceEvent);
+    // deno-lint-ignore no-explicit-any
+    subscribe: (filters: any, callbacks: any) => {
+      assertEquals(filters, [{ ids: ["ref123"] }]);
+      queueMicrotask(() => {
+        callbacks.onevent(referenceEvent);
+        callbacks.oneose();
+      });
+      return { close: () => {} };
     },
   };
   const event = {
@@ -326,9 +332,14 @@ Deno.test("getSourceEvent - e タグから参照イベントを取得できる",
 Deno.test("getSourceEvent - 複数の e タグがある場合最後のものを使用する", async () => {
   const referenceEvent = { id: "ref456", content: "found", tags: [] };
   const mockRelay = {
-    get: (filter: { ids: string[] }) => {
-      assertEquals(filter.ids, ["ref456"]);
-      return Promise.resolve(referenceEvent);
+    // deno-lint-ignore no-explicit-any
+    subscribe: (filters: any, callbacks: any) => {
+      assertEquals(filters, [{ ids: ["ref456"] }]);
+      queueMicrotask(() => {
+        callbacks.onevent(referenceEvent);
+        callbacks.oneose();
+      });
+      return { close: () => {} };
     },
   };
   const event = {

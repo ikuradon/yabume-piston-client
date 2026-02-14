@@ -5,6 +5,8 @@
   },
   "imports": {
     "@std/dotenv": "jsr:@std/dotenv@^0.225.0",
-    "@std/assert": "jsr:@std/assert@^1.0.0"
+    "@std/assert": "jsr:@std/assert@^1.0.0",
+    "@nostr/tools": "jsr:@nostr/tools@^2.23.1",
+    "@noble/hashes": "jsr:@noble/hashes@^2.0.1"
   }
 }

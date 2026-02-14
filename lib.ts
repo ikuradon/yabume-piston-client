@@ -1,4 +1,5 @@
-import { finishEvent } from "npm:nostr-tools@^1.14.0";
+import { finalizeEvent } from "@nostr/tools/pure";
+import { hexToBytes } from "@noble/hashes/utils.js";
 
 export interface Runtime {
   language: string;
@@ -152,7 +153,7 @@ export const composeReplyPost = (
     created_at: targetEvent.created_at + 1,
   };
 
-  return finishEvent(ev, privateKeyHex);
+  return finalizeEvent(ev, hexToBytes(privateKeyHex));
 };
 
 export const getSourceEvent = async (
@@ -168,8 +169,20 @@ export const getSourceEvent = async (
     .filter((x: any) => x[0] === "e")
     .slice(-1)[0][1];
 
-  const referenceEvent = await relay.get({
-    ids: [referenceId],
+  const referenceEvent: NostrEvent | null = await new Promise((resolve) => {
+    let found: NostrEvent | null = null;
+    const sub = relay.subscribe(
+      [{ ids: [referenceId] }],
+      {
+        onevent(e: NostrEvent) {
+          found = e;
+        },
+        oneose() {
+          sub.close();
+          resolve(found);
+        },
+      },
+    );
   });
   return referenceEvent;
 };

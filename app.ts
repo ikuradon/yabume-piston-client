@@ -1,6 +1,8 @@
 import "@std/dotenv/load";
 
-import { getPublicKey, relayInit } from "npm:nostr-tools@^1.14.0";
+import { getPublicKey } from "@nostr/tools/pure";
+import { Relay } from "@nostr/tools/relay";
+import { hexToBytes } from "@noble/hashes/utils.js";
 
 import piston from "npm:piston-client@^1.0.2";
 
@@ -50,8 +52,8 @@ const executePiston = async (
     files: [script],
     args: argsOverride ?? args,
     stdin: stdinOverride ?? stdin,
-    compile_timeout: 10000,
-    run_timeout: 10000,
+    compileTimeout: 10000,
+    runTimeout: 10000,
   });
 
   return formatExecutionResult(result);
@@ -67,48 +69,43 @@ const publishToRelay = async (relay: any, ev: any) => {
 };
 
 try {
-  const relay = relayInit(RELAY_URL);
-  relay.on("error", () => {
-    console.error("failed to connect");
-    Deno.exit(0);
-  });
+  const secretKey = hexToBytes(PRIVATE_KEY_HEX);
+  const relay = await Relay.connect(RELAY_URL);
 
-  relay.connect();
+  relay.subscribe([{ kinds: [1], since: unixNow() }], {
+    // deno-lint-ignore no-explicit-any
+    async onevent(ev: any) {
+      if (ev.created_at < unixNow() - ACCEPT_DUR_SEC) return;
+      if (ev.pubkey === getPublicKey(secretKey)) return; // 自分の投稿は無視する
 
-  const sub = relay.sub([{ kinds: [1], since: unixNow() }]);
-
-  // deno-lint-ignore no-explicit-any
-  sub.on("event", async (ev: any) => {
-    if (ev.created_at < unixNow() - ACCEPT_DUR_SEC) return false;
-    if (ev.pubkey === getPublicKey(PRIVATE_KEY_HEX)) return false; // 自分の投稿は無視する
-
-    if (ev.content.startsWith("/run")) {
-      console.log("/run");
-      const message = await executePiston(ev.content);
-      const replyPost = composeReplyPost(message, ev, PRIVATE_KEY_HEX);
-      await publishToRelay(relay, replyPost);
-    } else if (ev.content.startsWith("/rerun")) {
-      console.log("/rerun");
-      const { args, stdin } = parseRerunCommand(ev.content);
-      let sourceEvent = ev;
-      while (true) {
-        sourceEvent = await getSourceEvent(relay, sourceEvent);
-        console.log(sourceEvent.content);
-        if (sourceEvent === null) break;
-        if (sourceEvent.content.startsWith("/run")) {
-          break;
-        }
-      }
-      if (sourceEvent !== null && sourceEvent.content.startsWith("/run")) {
-        const message = await executePiston(
-          sourceEvent.content,
-          args.length > 0 ? args : undefined,
-          stdin !== "" ? stdin : undefined,
-        );
+      if (ev.content.startsWith("/run")) {
+        console.log("/run");
+        const message = await executePiston(ev.content);
         const replyPost = composeReplyPost(message, ev, PRIVATE_KEY_HEX);
         await publishToRelay(relay, replyPost);
+      } else if (ev.content.startsWith("/rerun")) {
+        console.log("/rerun");
+        const { args, stdin } = parseRerunCommand(ev.content);
+        let sourceEvent = ev;
+        while (true) {
+          sourceEvent = await getSourceEvent(relay, sourceEvent);
+          console.log(sourceEvent.content);
+          if (sourceEvent === null) break;
+          if (sourceEvent.content.startsWith("/run")) {
+            break;
+          }
+        }
+        if (sourceEvent !== null && sourceEvent.content.startsWith("/run")) {
+          const message = await executePiston(
+            sourceEvent.content,
+            args.length > 0 ? args : undefined,
+            stdin !== "" ? stdin : undefined,
+          );
+          const replyPost = composeReplyPost(message, ev, PRIVATE_KEY_HEX);
+          await publishToRelay(relay, replyPost);
+        }
       }
-    }
+    },
   });
 } catch (e) {
   console.error(e);
