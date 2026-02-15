@@ -11,14 +11,14 @@ Execute code in the specified language.
 
 **Basic Syntax:**
 
-```
+````
 /run <language>
 <args (optional, one per line)>
-\`\`\`
-<code>
-\`\`\`
-<stdin (optional)>
 ```
+<code>
+```
+<stdin (optional)>
+````
 
 **Legacy Syntax:**
 
