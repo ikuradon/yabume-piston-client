@@ -174,7 +174,9 @@ export const getSourceEvent = async (
 
   const referenceEvent: NostrEvent | null = await new Promise((resolve) => {
     let found: NostrEvent | null = null;
-    const sub = relay.subscribe(
+    // deno-lint-ignore prefer-const
+    let sub: ReturnType<typeof relay.subscribe>;
+    sub = relay.subscribe(
       [{ ids: [referenceId] }],
       {
         onevent(e: NostrEvent) {

@@ -8,6 +8,8 @@
     "@std/assert": "jsr:@std/assert@^1.0.0",
     "@nostr/tools": "jsr:@nostr/tools@^2.23.1",
     "@noble/hashes": "jsr:@noble/hashes@^2.0.1",
-    "piston-client": "npm:piston-client@^1.0.2"
+    "piston-client": "npm:piston-client@^1.0.2",
+    "@ikuradon/tsunagiya": "jsr:@ikuradon/tsunagiya@^0.1.0",
+    "@ikuradon/tsunagiya/testing": "jsr:@ikuradon/tsunagiya@^0.1.0/testing"
   }
 }
