@@ -14,6 +14,7 @@ import {
   composeReplyPost,
   formatExecutionResult,
   getSourceEvent,
+  type NostrEvent,
   parseRerunCommand,
   parseRunCommand,
 } from "./lib.ts";
@@ -60,13 +61,13 @@ const executePiston = async (
   return formatExecutionResult(result);
 };
 
-// deno-lint-ignore no-explicit-any
-const publishToRelay = async (relay: any, ev: any) => {
-  await relay
-    .publish(ev)
-    .then(() => console.log("post ok"))
-    // deno-lint-ignore no-explicit-any
-    .catch((e: any) => console.log(`post error: ${e}`));
+const publishToRelay = async (relay: Relay, ev: NostrEvent) => {
+  try {
+    await relay.publish(ev);
+    console.log("post ok");
+  } catch (e) {
+    console.log(`post error: ${e}`);
+  }
 };
 
 try {
@@ -74,8 +75,7 @@ try {
   const relay = await Relay.connect(RELAY_URL);
 
   relay.subscribe([{ kinds: [1], since: unixNow() }], {
-    // deno-lint-ignore no-explicit-any
-    async onevent(ev: any) {
+    async onevent(ev: NostrEvent) {
       if (ev.created_at < unixNow() - ACCEPT_DUR_SEC) return;
       if (ev.pubkey === getPublicKey(secretKey)) return; // 自分の投稿は無視する
 
@@ -90,8 +90,8 @@ try {
         let sourceEvent = ev;
         while (true) {
           sourceEvent = await getSourceEvent(relay, sourceEvent);
-          console.log(sourceEvent.content);
           if (sourceEvent === null) break;
+          console.log(sourceEvent.content);
           if (sourceEvent.content.startsWith("/run")) {
             break;
           }

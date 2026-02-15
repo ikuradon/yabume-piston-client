@@ -11,9 +11,11 @@ import {
   formatExecutionResult,
   getSourceEvent,
   type LanguageEntry,
+  type NostrEvent,
   parseRerunCommand,
   parseRunCommand,
   type Runtime,
+  type SubscribableRelay,
 } from "./lib.ts";
 
 // テスト用の秘密鍵（テスト専用、本番には使用しないこと）
@@ -256,7 +258,7 @@ Deno.test("composeReplyPost - 正しい構造のイベントを生成する", ()
     id: "abc123",
     pubkey: "def456",
     created_at: 1700000000,
-  };
+  } as NostrEvent;
 
   const event = composeReplyPost(
     "reply content",
@@ -277,7 +279,7 @@ Deno.test("composeReplyPost - イベントに署名が付与される", () => {
     id: "abc123",
     pubkey: "def456",
     created_at: 1700000000,
-  };
+  } as NostrEvent;
 
   const event = composeReplyPost("test", targetEvent, TEST_PRIVATE_KEY);
 
@@ -292,12 +294,10 @@ Deno.test("composeReplyPost - イベントに署名が付与される", () => {
 // ============================================================
 
 Deno.test("getSourceEvent - e タグがない場合は null を返す", async () => {
-  const mockRelay = {
-    subscribe: () => ({ close: () => {} }),
+  const mockRelay: SubscribableRelay = {
+    subscribe: () => ({ close() {} }),
   };
-  const event = {
-    tags: [["p", "somepubkey"]],
-  };
+  const event = { tags: [["p", "somepubkey"]] } as NostrEvent;
 
   const result = await getSourceEvent(mockRelay, event);
   assertEquals(result, null);
@@ -308,37 +308,37 @@ Deno.test("getSourceEvent - e タグから参照イベントを取得できる",
     id: "ref123",
     content: "/run python\nprint('hi')",
     tags: [],
-  };
-  const mockRelay = {
-    // deno-lint-ignore no-explicit-any
-    subscribe: (filters: any, callbacks: any) => {
+  } as unknown as NostrEvent;
+  const mockRelay: SubscribableRelay = {
+    subscribe(filters, callbacks) {
       assertEquals(filters, [{ ids: ["ref123"] }]);
       queueMicrotask(() => {
         callbacks.onevent(referenceEvent);
         callbacks.oneose();
       });
-      return { close: () => {} };
+      return { close() {} };
     },
   };
-  const event = {
-    tags: [["e", "ref123"]],
-  };
+  const event = { tags: [["e", "ref123"]] } as NostrEvent;
 
   const result = await getSourceEvent(mockRelay, event);
   assertEquals(result, referenceEvent);
 });
 
 Deno.test("getSourceEvent - 複数の e タグがある場合最後のものを使用する", async () => {
-  const referenceEvent = { id: "ref456", content: "found", tags: [] };
-  const mockRelay = {
-    // deno-lint-ignore no-explicit-any
-    subscribe: (filters: any, callbacks: any) => {
+  const referenceEvent = {
+    id: "ref456",
+    content: "found",
+    tags: [],
+  } as unknown as NostrEvent;
+  const mockRelay: SubscribableRelay = {
+    subscribe(filters, callbacks) {
       assertEquals(filters, [{ ids: ["ref456"] }]);
       queueMicrotask(() => {
         callbacks.onevent(referenceEvent);
         callbacks.oneose();
       });
-      return { close: () => {} };
+      return { close() {} };
     },
   };
   const event = {
@@ -347,7 +347,7 @@ Deno.test("getSourceEvent - 複数の e タグがある場合最後のものを�
       ["p", "somepubkey"],
       ["e", "ref456"],
     ],
-  };
+  } as NostrEvent;
 
   const result = await getSourceEvent(mockRelay, event);
   assertEquals(result, referenceEvent);

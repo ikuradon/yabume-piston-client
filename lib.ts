@@ -12,8 +12,35 @@ export interface LanguageEntry {
   version: string;
 }
 
-// deno-lint-ignore no-explicit-any
-export type NostrEvent = any;
+export interface NostrEvent {
+  id: string;
+  pubkey: string;
+  kind: number;
+  content: string;
+  created_at: number;
+  tags: string[][];
+  sig: string;
+}
+
+export interface PistonResult {
+  compile?: { output: string; code: number } | null;
+  run?: { output: string; code: number } | null;
+  message?: string;
+}
+
+export interface Subscription {
+  close(): void;
+}
+
+export interface SubscribableRelay {
+  subscribe(
+    filters: Record<string, unknown>[],
+    callbacks: {
+      onevent: (event: NostrEvent) => void;
+      oneose: () => void;
+    },
+  ): Subscription;
+}
 
 export const buildLanguageMap = (
   runtimes: Runtime[],
@@ -37,30 +64,28 @@ export const buildLanguageMap = (
 };
 
 export const buildHelpMessage = (): string => {
-  return (
-    "I RUN C0DE.\n" +
-    "\n" +
-    "Basic Syntax:\n" +
-    "/run <language>\n" +
-    "<args (optional, one per line)>\n" +
-    "```\n" +
-    "<code>\n" +
-    "```\n" +
-    "<stdin (optional)>\n" +
-    "\n" +
-    "Legacy Syntax:\n" +
-    "/run <language>\n" +
-    "<code>\n" +
-    "\n" +
-    "Rerun:\n" +
-    "/rerun\n" +
-    "<args (optional, one per line)>\n" +
-    "---\n" +
-    "<stdin (optional)>\n" +
-    "\n" +
-    "Language List:\n" +
-    "/run lang"
-  );
+  return `I RUN C0DE.
+
+Basic Syntax:
+/run <language>
+<args (optional, one per line)>
+\`\`\`
+<code>
+\`\`\`
+<stdin (optional)>
+
+Legacy Syntax:
+/run <language>
+<code>
+
+Rerun:
+/rerun
+<args (optional, one per line)>
+---
+<stdin (optional)>
+
+Language List:
+/run lang`;
 };
 
 export const buildLanguageListMessage = (
@@ -129,16 +154,11 @@ export const buildScript = (
   return script;
 };
 
-// deno-lint-ignore no-explicit-any
-export const formatExecutionResult = (result: any): string => {
-  if (result.compile && result.compile.code) return result.compile.output;
-  else {
-    return result.run
-      ? result.run.output
-      : result.message
-      ? result.message
-      : "Execution error";
-  }
+export const formatExecutionResult = (result: PistonResult): string => {
+  if (result.compile?.code) return result.compile.output;
+  if (result.run) return result.run.output;
+  if (result.message) return result.message;
+  return "Execution error";
 };
 
 export const composeReplyPost = (
@@ -148,7 +168,7 @@ export const composeReplyPost = (
 ) => {
   const ev = {
     kind: 1,
-    content: content,
+    content,
     tags: [
       ["e", targetEvent.id],
       ["p", targetEvent.pubkey],
@@ -160,23 +180,16 @@ export const composeReplyPost = (
 };
 
 export const getSourceEvent = async (
-  // deno-lint-ignore no-explicit-any
-  relay: any,
+  relay: SubscribableRelay,
   event: NostrEvent,
 ): Promise<NostrEvent | null> => {
-  // deno-lint-ignore no-explicit-any
-  const etags = event.tags.filter((x: any) => x[0] === "e");
+  const etags = event.tags.filter((x) => x[0] === "e");
   if (etags.length === 0) return null;
-  const referenceId = event.tags
-    // deno-lint-ignore no-explicit-any
-    .filter((x: any) => x[0] === "e")
-    .slice(-1)[0][1];
+  const referenceId = etags.at(-1)![1];
 
   const referenceEvent: NostrEvent | null = await new Promise((resolve) => {
     let found: NostrEvent | null = null;
-    // deno-lint-ignore prefer-const
-    let sub: ReturnType<typeof relay.subscribe>;
-    sub = relay.subscribe(
+    const sub = relay.subscribe(
       [{ ids: [referenceId] }],
       {
         onevent(e: NostrEvent) {

@@ -2,13 +2,25 @@ import { assertEquals, assertExists } from "@std/assert";
 import { Relay, useWebSocketImplementation } from "@nostr/tools/relay";
 import { MockPool } from "@ikuradon/tsunagiya";
 import { EventBuilder } from "@ikuradon/tsunagiya/testing";
+import piston from "piston-client";
 
-import { composeReplyPost, getSourceEvent } from "./lib.ts";
+import {
+  buildLanguageMap,
+  buildScript,
+  composeReplyPost,
+  formatExecutionResult,
+  getSourceEvent,
+  type NostrEvent,
+  parseRunCommand,
+  type SubscribableRelay,
+  type Subscription,
+} from "./lib.ts";
 
 // テスト用の秘密鍵（テスト専用、本番には使用しないこと）
 const TEST_PRIVATE_KEY = "a".repeat(64);
 // @nostr/tools は normalizeURL で URL を正規化する（末尾スラッシュ付与）
 const RELAY_URL = "wss://test.relay/";
+const PISTON_SERVER = Deno.env.get("PISTON_SERVER");
 
 // @nostr/tools はモジュールロード時に WebSocket をキャプチャするため、
 // pool.install() で globalThis.WebSocket を差し替えた後、
@@ -29,8 +41,7 @@ function uninstallMock(pool: MockPool): void {
  * @nostr/tools はイベント受信時に verifyEvent で署名を検証する。
  * EventBuilder のモック署名は検証に通らないため、テスト用に検証を無効化する。
  */
-// deno-lint-ignore no-explicit-any
-async function connectRelay(url: string): Promise<any> {
+async function connectRelay(url: string): Promise<Relay> {
   // deno-lint-ignore no-explicit-any
   return await Relay.connect(url, { verifyEvent: () => true } as any);
 }
@@ -43,8 +54,10 @@ async function connectRelay(url: string): Promise<any> {
  * sub.close() と relay.close() の間でマイクロタスクをフラッシュし、
  * CLOSE メッセージの送信を完了させる必要がある。
  */
-// deno-lint-ignore no-explicit-any
-async function safeClose(relay: any, ...subs: any[]): Promise<void> {
+async function safeClose(
+  relay: { close(): void },
+  ...subs: (Subscription | undefined)[]
+): Promise<void> {
   for (const sub of subs) {
     sub?.close();
   }
@@ -52,172 +65,169 @@ async function safeClose(relay: any, ...subs: any[]): Promise<void> {
   relay.close();
 }
 
+type MockRelay = ReturnType<MockPool["relay"]>;
+
+/**
+ * MockPool → installMock → connectRelay → fn → safeClose → uninstallMock の
+ * ボイラープレートを共通化するヘルパー。
+ */
+async function withMockRelay(
+  fn: (relay: Relay, mockRelay: MockRelay) => Promise<void>,
+): Promise<void> {
+  const pool = new MockPool();
+  const mockRelay = pool.relay(RELAY_URL);
+  installMock(pool);
+  try {
+    const relay = await connectRelay(RELAY_URL);
+    await fn(relay, mockRelay);
+    await safeClose(relay);
+  } finally {
+    uninstallMock(pool);
+  }
+}
+
+/**
+ * サブスクリプションを開始し EOSE まで受信したイベントを収集する。
+ * 呼び出し元で sub.close() を実行すること。
+ */
+function subscribeUntilEose(
+  relay: SubscribableRelay,
+  filters: Record<string, unknown>[],
+): Promise<{ events: NostrEvent[]; sub: Subscription }> {
+  return new Promise((resolve) => {
+    const events: NostrEvent[] = [];
+    const sub = relay.subscribe(filters, {
+      onevent(ev: NostrEvent) {
+        events.push(ev);
+      },
+      oneose() {
+        resolve({ events, sub });
+      },
+    });
+  });
+}
+
 // ============================================================
 // getSourceEvent - mock relay 統合テスト
 // ============================================================
 
 Deno.test("getSourceEvent (relay) - mock relay から参照イベントを取得できる", async () => {
-  const pool = new MockPool();
-  const mockRelay = pool.relay(RELAY_URL);
+  await withMockRelay(async (relay, mockRelay) => {
+    const refEvent = EventBuilder.kind1()
+      .content("/run python\nprint('hello')")
+      .build();
+    mockRelay.store(refEvent);
 
-  const refEvent = EventBuilder.kind1()
-    .content("/run python\nprint('hello')")
-    .build();
-  mockRelay.store(refEvent);
-
-  installMock(pool);
-  try {
-    const relay = await connectRelay(RELAY_URL);
-    const event = { tags: [["e", refEvent.id]] };
+    const event = { tags: [["e", refEvent.id]] } as NostrEvent;
 
     const result = await getSourceEvent(relay, event);
     assertExists(result);
     assertEquals(result!.id, refEvent.id);
     assertEquals(result!.content, "/run python\nprint('hello')");
-
-    await safeClose(relay);
-  } finally {
-    uninstallMock(pool);
-  }
+  });
 });
 
 Deno.test("getSourceEvent (relay) - 存在しないイベントIDの場合 null を返す", async () => {
-  const pool = new MockPool();
-  pool.relay(RELAY_URL);
-
-  installMock(pool);
-  try {
-    const relay = await connectRelay(RELAY_URL);
-    const event = { tags: [["e", "nonexistent_id"]] };
+  await withMockRelay(async (relay) => {
+    const event = { tags: [["e", "nonexistent_id"]] } as NostrEvent;
 
     const result = await getSourceEvent(relay, event);
     assertEquals(result, null);
-
-    await safeClose(relay);
-  } finally {
-    uninstallMock(pool);
-  }
+  });
 });
 
 Deno.test("getSourceEvent (relay) - 複数の e タグがある場合最後のものを使用する", async () => {
-  const pool = new MockPool();
-  const mockRelay = pool.relay(RELAY_URL);
+  await withMockRelay(async (relay, mockRelay) => {
+    const oldEvent = EventBuilder.kind1()
+      .content("old event")
+      .build();
+    const targetEvent = EventBuilder.kind1()
+      .content("/run python\nprint('target')")
+      .build();
 
-  const oldEvent = EventBuilder.kind1()
-    .content("old event")
-    .build();
-  const targetEvent = EventBuilder.kind1()
-    .content("/run python\nprint('target')")
-    .build();
+    mockRelay.store(oldEvent);
+    mockRelay.store(targetEvent);
 
-  mockRelay.store(oldEvent);
-  mockRelay.store(targetEvent);
-
-  installMock(pool);
-  try {
-    const relay = await connectRelay(RELAY_URL);
     const event = {
       tags: [
         ["e", oldEvent.id],
         ["p", "somepubkey"],
         ["e", targetEvent.id],
       ],
-    };
+    } as NostrEvent;
 
     const result = await getSourceEvent(relay, event);
     assertExists(result);
     assertEquals(result!.id, targetEvent.id);
     assertEquals(result!.content, "/run python\nprint('target')");
-
-    await safeClose(relay);
-  } finally {
-    uninstallMock(pool);
-  }
+  });
 });
 
 Deno.test("getSourceEvent (relay) - 返信チェーンをたどって元の /run イベントを取得できる", async () => {
-  const pool = new MockPool();
-  const mockRelay = pool.relay(RELAY_URL);
+  await withMockRelay(async (relay, mockRelay) => {
+    // 元の /run コマンド
+    const runEvent = EventBuilder.kind1()
+      .content("/run python\nprint('hello')")
+      .build();
 
-  // 元の /run コマンド
-  const runEvent = EventBuilder.kind1()
-    .content("/run python\nprint('hello')")
-    .build();
+    // ボットの応答（runEvent への返信）
+    const botReply = EventBuilder.kind1()
+      .content("hello\n")
+      .tag("e", runEvent.id)
+      .tag("p", runEvent.pubkey)
+      .build();
 
-  // ボットの応答（runEvent への返信）
-  const botReply = EventBuilder.kind1()
-    .content("hello\n")
-    .tag("e", runEvent.id)
-    .tag("p", runEvent.pubkey)
-    .build();
-
-  mockRelay.store(runEvent);
-  mockRelay.store(botReply);
-
-  installMock(pool);
-  try {
-    const relay = await connectRelay(RELAY_URL);
+    mockRelay.store(runEvent);
+    mockRelay.store(botReply);
 
     // botReply から元の /run イベントをたどる
-    const sourceEvent = await getSourceEvent(relay, botReply);
+    const sourceEvent = await getSourceEvent(
+      relay,
+      botReply as NostrEvent,
+    );
     assertExists(sourceEvent);
     assertEquals(sourceEvent!.id, runEvent.id);
     assertEquals(sourceEvent!.content.startsWith("/run"), true);
-
-    await safeClose(relay);
-  } finally {
-    uninstallMock(pool);
-  }
+  });
 });
 
 Deno.test("getSourceEvent (relay) - /rerun チェーン全体をたどって元の /run に到達できる", async () => {
-  const pool = new MockPool();
-  const mockRelay = pool.relay(RELAY_URL);
+  await withMockRelay(async (relay, mockRelay) => {
+    // 元の /run コマンド
+    const runEvent = EventBuilder.kind1()
+      .content("/run python\nprint('hello')")
+      .build();
 
-  // 元の /run コマンド
-  const runEvent = EventBuilder.kind1()
-    .content("/run python\nprint('hello')")
-    .build();
+    // ボットの応答
+    const botReply = EventBuilder.kind1()
+      .content("hello\n")
+      .tag("e", runEvent.id)
+      .tag("p", runEvent.pubkey)
+      .build();
 
-  // ボットの応答
-  const botReply = EventBuilder.kind1()
-    .content("hello\n")
-    .tag("e", runEvent.id)
-    .tag("p", runEvent.pubkey)
-    .build();
+    // ユーザーの /rerun コマンド（botReply への返信）
+    const rerunEvent = EventBuilder.kind1()
+      .content("/rerun\nnew_arg")
+      .tag("e", botReply.id)
+      .tag("p", botReply.pubkey)
+      .build();
 
-  // ユーザーの /rerun コマンド（botReply への返信）
-  const rerunEvent = EventBuilder.kind1()
-    .content("/rerun\nnew_arg")
-    .tag("e", botReply.id)
-    .tag("p", botReply.pubkey)
-    .build();
-
-  mockRelay.store(runEvent);
-  mockRelay.store(botReply);
-  mockRelay.store(rerunEvent);
-
-  installMock(pool);
-  try {
-    const relay = await connectRelay(RELAY_URL);
+    mockRelay.store(runEvent);
+    mockRelay.store(botReply);
+    mockRelay.store(rerunEvent);
 
     // app.ts の /rerun ロジックをシミュレート
-    // deno-lint-ignore no-explicit-any
-    let sourceEvent: any = rerunEvent;
+    let sourceEvent: NostrEvent | null = rerunEvent as NostrEvent;
     while (true) {
-      sourceEvent = await getSourceEvent(relay, sourceEvent);
+      sourceEvent = await getSourceEvent(relay, sourceEvent!);
       if (sourceEvent === null) break;
       if (sourceEvent.content.startsWith("/run")) break;
     }
 
     assertExists(sourceEvent);
-    assertEquals(sourceEvent.content, "/run python\nprint('hello')");
-    assertEquals(sourceEvent.id, runEvent.id);
-
-    await safeClose(relay);
-  } finally {
-    uninstallMock(pool);
-  }
+    assertEquals(sourceEvent!.content, "/run python\nprint('hello')");
+    assertEquals(sourceEvent!.id, runEvent.id);
+  });
 });
 
 // ============================================================
@@ -225,20 +235,14 @@ Deno.test("getSourceEvent (relay) - /rerun チェーン全体をたどって元�
 // ============================================================
 
 Deno.test("composeReplyPost (relay) - mock relay にイベントを公開できる", async () => {
-  const pool = new MockPool();
-  const mockRelay = pool.relay(RELAY_URL);
-
-  installMock(pool);
-  try {
-    const relay = await connectRelay(RELAY_URL);
-
+  await withMockRelay(async (relay, mockRelay) => {
     const targetEvent = EventBuilder.kind1()
       .content("test post")
       .build();
 
     const replyEvent = composeReplyPost(
       "reply content",
-      targetEvent,
+      targetEvent as NostrEvent,
       TEST_PRIVATE_KEY,
     );
 
@@ -248,21 +252,11 @@ Deno.test("composeReplyPost (relay) - mock relay にイベントを公開でき�
     const received = mockRelay.findEvent(replyEvent.id);
     assertExists(received);
     assertEquals(received!.content, "reply content");
-
-    await safeClose(relay);
-  } finally {
-    uninstallMock(pool);
-  }
+  });
 });
 
 Deno.test("composeReplyPost (relay) - 公開イベントの e/p タグが正しい", async () => {
-  const pool = new MockPool();
-  const mockRelay = pool.relay(RELAY_URL);
-
-  installMock(pool);
-  try {
-    const relay = await connectRelay(RELAY_URL);
-
+  await withMockRelay(async (relay, mockRelay) => {
     const targetEvent = EventBuilder.kind1()
       .content("original post")
       .createdAt(1700000000)
@@ -270,7 +264,7 @@ Deno.test("composeReplyPost (relay) - 公開イベントの e/p タグが正し�
 
     const replyEvent = composeReplyPost(
       "response",
-      targetEvent,
+      targetEvent as NostrEvent,
       TEST_PRIVATE_KEY,
     );
 
@@ -282,52 +276,36 @@ Deno.test("composeReplyPost (relay) - 公開イベントの e/p タグが正し�
     assertEquals(received!.created_at, 1700000001);
 
     // e タグと p タグを検証
-    // deno-lint-ignore no-explicit-any
-    const eTags = received!.tags.filter((t: any) => t[0] === "e");
-    // deno-lint-ignore no-explicit-any
-    const pTags = received!.tags.filter((t: any) => t[0] === "p");
+    const eTags = received!.tags.filter((t: string[]) => t[0] === "e");
+    const pTags = received!.tags.filter((t: string[]) => t[0] === "p");
     assertEquals(eTags.length, 1);
     assertEquals(eTags[0][1], targetEvent.id);
     assertEquals(pTags.length, 1);
     assertEquals(pTags[0][1], targetEvent.pubkey);
-
-    await safeClose(relay);
-  } finally {
-    uninstallMock(pool);
-  }
+  });
 });
 
 Deno.test("composeReplyPost (relay) - 公開したイベントを再取得できる", async () => {
-  const pool = new MockPool();
-  pool.relay(RELAY_URL);
-
-  installMock(pool);
-  try {
-    const relay = await connectRelay(RELAY_URL);
-
+  await withMockRelay(async (relay) => {
     const targetEvent = EventBuilder.kind1()
       .content("original")
       .build();
 
     const replyEvent = composeReplyPost(
       "bot response",
-      targetEvent,
+      targetEvent as NostrEvent,
       TEST_PRIVATE_KEY,
     );
 
     await relay.publish(replyEvent);
 
     // 公開したイベントを getSourceEvent で取得できることを確認
-    const queryEvent = { tags: [["e", replyEvent.id]] };
+    const queryEvent = { tags: [["e", replyEvent.id]] } as NostrEvent;
     const fetched = await getSourceEvent(relay, queryEvent);
     assertExists(fetched);
     assertEquals(fetched!.id, replyEvent.id);
     assertEquals(fetched!.content, "bot response");
-
-    await safeClose(relay);
-  } finally {
-    uninstallMock(pool);
-  }
+  });
 });
 
 // ============================================================
@@ -335,113 +313,65 @@ Deno.test("composeReplyPost (relay) - 公開したイベントを再取得でき
 // ============================================================
 
 Deno.test("サブスクリプション - kind 1 イベントをフィルタリングして受信できる", async () => {
-  const pool = new MockPool();
-  const mockRelay = pool.relay(RELAY_URL);
+  await withMockRelay(async (relay, mockRelay) => {
+    const now = Math.floor(Date.now() / 1000);
 
-  const now = Math.floor(Date.now() / 1000);
+    // kind 1 のイベント（受信対象）
+    const textEvent = EventBuilder.kind1()
+      .content("/run python\nprint('hello')")
+      .createdAt(now)
+      .build();
 
-  // kind 1 のイベント（受信対象）
-  const textEvent = EventBuilder.kind1()
-    .content("/run python\nprint('hello')")
-    .createdAt(now)
-    .build();
+    // kind 7 のイベント（フィルタで除外される）
+    const reactionEvent = EventBuilder.kind7()
+      .content("+")
+      .createdAt(now)
+      .build();
 
-  // kind 7 のイベント（フィルタで除外される）
-  const reactionEvent = EventBuilder.kind7()
-    .content("+")
-    .createdAt(now)
-    .build();
-
-  mockRelay.store(textEvent);
-  mockRelay.store(reactionEvent);
-
-  installMock(pool);
-  try {
-    const relay = await connectRelay(RELAY_URL);
+    mockRelay.store(textEvent);
+    mockRelay.store(reactionEvent);
 
     // app.ts と同じフィルタパターン
-    // deno-lint-ignore no-explicit-any
-    let sub: any;
-    // deno-lint-ignore no-explicit-any
-    const receivedEvents = await new Promise<any[]>((resolve) => {
-      // deno-lint-ignore no-explicit-any
-      const events: any[] = [];
-      sub = relay.subscribe(
-        [{ kinds: [1], since: now - 60 }],
-        {
-          // deno-lint-ignore no-explicit-any
-          onevent(ev: any) {
-            events.push(ev);
-          },
-          oneose() {
-            resolve(events);
-          },
-        },
-      );
-    });
+    const { events, sub } = await subscribeUntilEose(relay, [
+      { kinds: [1], since: now - 60 },
+    ]);
 
     // kind 1 のイベントのみ受信する
-    assertEquals(receivedEvents.length, 1);
-    assertEquals(receivedEvents[0].content, "/run python\nprint('hello')");
+    assertEquals(events.length, 1);
+    assertEquals(events[0].content, "/run python\nprint('hello')");
 
-    await safeClose(relay, sub);
-  } finally {
-    uninstallMock(pool);
-  }
+    sub.close();
+  });
 });
 
 Deno.test("サブスクリプション - since より古いイベントは受信しない", async () => {
-  const pool = new MockPool();
-  const mockRelay = pool.relay(RELAY_URL);
+  await withMockRelay(async (relay, mockRelay) => {
+    const now = Math.floor(Date.now() / 1000);
 
-  const now = Math.floor(Date.now() / 1000);
+    // 新しいイベント（受信対象）
+    const newEvent = EventBuilder.kind1()
+      .content("new event")
+      .createdAt(now)
+      .build();
 
-  // 新しいイベント（受信対象）
-  const newEvent = EventBuilder.kind1()
-    .content("new event")
-    .createdAt(now)
-    .build();
+    // 古いイベント（since より前なので除外）
+    const oldEvent = EventBuilder.kind1()
+      .content("old event")
+      .createdAt(now - 120)
+      .build();
 
-  // 古いイベント（since より前なので除外）
-  const oldEvent = EventBuilder.kind1()
-    .content("old event")
-    .createdAt(now - 120)
-    .build();
+    mockRelay.store(newEvent);
+    mockRelay.store(oldEvent);
 
-  mockRelay.store(newEvent);
-  mockRelay.store(oldEvent);
+    const { events, sub } = await subscribeUntilEose(relay, [
+      { kinds: [1], since: now - 60 },
+    ]);
 
-  installMock(pool);
-  try {
-    const relay = await connectRelay(RELAY_URL);
+    assertEquals(events.length, 1);
+    assertEquals(events[0].content, "new event");
 
-    // deno-lint-ignore no-explicit-any
-    let sub: any;
-    // deno-lint-ignore no-explicit-any
-    const receivedEvents = await new Promise<any[]>((resolve) => {
-      // deno-lint-ignore no-explicit-any
-      const events: any[] = [];
-      sub = relay.subscribe(
-        [{ kinds: [1], since: now - 60 }],
-        {
-          // deno-lint-ignore no-explicit-any
-          onevent(ev: any) {
-            events.push(ev);
-          },
-          oneose() {
-            resolve(events);
-          },
-        },
-      );
-    });
-
-    assertEquals(receivedEvents.length, 1);
-    assertEquals(receivedEvents[0].content, "new event");
-
-    await safeClose(relay, sub);
-  } finally {
-    uninstallMock(pool);
-  }
+    sub.close();
+  });
 });
 
 // ============================================================
@@ -449,59 +379,33 @@ Deno.test("サブスクリプション - since より古いイベントは受信
 // ============================================================
 
 Deno.test("リレー検証 - REQ メッセージの受信を確認できる", async () => {
-  const pool = new MockPool();
-  const mockRelay = pool.relay(RELAY_URL);
-
-  installMock(pool);
-  try {
-    const relay = await connectRelay(RELAY_URL);
-
+  await withMockRelay(async (relay, mockRelay) => {
     // サブスクリプション前は REQ なし
     assertEquals(mockRelay.countREQs(), 0);
 
-    // deno-lint-ignore no-explicit-any
-    let sub: any;
-    await new Promise<void>((resolve) => {
-      sub = relay.subscribe(
-        [{ kinds: [1] }],
-        {
-          onevent() {},
-          oneose() {
-            resolve();
-          },
-        },
-      );
-    });
+    const { sub } = await subscribeUntilEose(relay, [{ kinds: [1] }]);
 
     // サブスクリプション後は REQ が 1 つ
     assertEquals(mockRelay.countREQs(), 1);
 
-    await safeClose(relay, sub);
-  } finally {
-    uninstallMock(pool);
-  }
+    sub.close();
+  });
 });
 
 Deno.test("リレー検証 - EVENT メッセージの受信を確認できる", async () => {
-  const pool = new MockPool();
-  const mockRelay = pool.relay(RELAY_URL);
-
-  installMock(pool);
-  try {
-    const relay = await connectRelay(RELAY_URL);
-
+  await withMockRelay(async (relay, mockRelay) => {
     assertEquals(mockRelay.countEvents(), 0);
 
     const targetEvent = EventBuilder.kind1().content("test").build();
-    const replyEvent = composeReplyPost("reply", targetEvent, TEST_PRIVATE_KEY);
+    const replyEvent = composeReplyPost(
+      "reply",
+      targetEvent as NostrEvent,
+      TEST_PRIVATE_KEY,
+    );
     await relay.publish(replyEvent);
 
     assertEquals(mockRelay.countEvents(), 1);
-
-    await safeClose(relay);
-  } finally {
-    uninstallMock(pool);
-  }
+  });
 });
 
 // ============================================================
@@ -510,8 +414,8 @@ Deno.test("リレー検証 - EVENT メッセージの受信を確認できる", 
 
 Deno.test("リレー障害 - 接続拒否時に Relay.connect が失敗する", async () => {
   const pool = new MockPool();
-  const relay = pool.relay(RELAY_URL);
-  relay.refuse();
+  const mockRelay = pool.relay(RELAY_URL);
+  mockRelay.refuse();
 
   installMock(pool);
   try {
@@ -528,13 +432,7 @@ Deno.test("リレー障害 - 接続拒否時に Relay.connect が失敗する", 
 });
 
 Deno.test("リレー障害 - NOTICE メッセージを受信できる", async () => {
-  const pool = new MockPool();
-  const mockRelay = pool.relay(RELAY_URL);
-
-  installMock(pool);
-  try {
-    const relay = await connectRelay(RELAY_URL);
-
+  await withMockRelay(async (relay, mockRelay) => {
     const notices: string[] = [];
     relay.onnotice = (msg: string) => {
       notices.push(msg);
@@ -547,9 +445,67 @@ Deno.test("リレー障害 - NOTICE メッセージを受信できる", async ()
 
     assertEquals(notices.length, 1);
     assertEquals(notices[0], "rate limit exceeded");
+  });
+});
 
-    await safeClose(relay);
-  } finally {
-    uninstallMock(pool);
-  }
+// ============================================================
+// E2E テスト - /run コマンドの完全なフロー
+// ============================================================
+
+Deno.test({
+  name: "E2E - mock relay + Piston で /run コマンドの完全なフローを実行できる",
+  async fn() {
+    await withMockRelay(async (relay, mockRelay) => {
+      // 1. mock relay に /run コマンドイベントを格納
+      const runEvent = EventBuilder.kind1()
+        .content("/run python\nprint('hello')")
+        .build();
+      mockRelay.store(runEvent);
+
+      // 2. サブスクリプションでイベント受信
+      const { events, sub } = await subscribeUntilEose(relay, [
+        { kinds: [1] },
+      ]);
+      assertEquals(events.length, 1);
+      const receivedEvent = events[0];
+      assertEquals(receivedEvent.content, "/run python\nprint('hello')");
+      sub.close();
+
+      // 3. parseRunCommand → buildScript → piston execute → formatExecutionResult
+      const parsed = parseRunCommand(receivedEvent.content);
+      assertExists(parsed);
+
+      const client = piston({ server: PISTON_SERVER });
+      const runtimes = await client.runtimes();
+      const languages = buildLanguageMap(runtimes);
+      assertExists(languages[parsed!.language]);
+
+      const script = buildScript(parsed!.code, languages, parsed!.language);
+      const result = await client.execute({
+        language: languages[parsed!.language].language,
+        version: languages[parsed!.language].version,
+        files: [script],
+        args: parsed!.args,
+        stdin: parsed!.stdin,
+        compileTimeout: 10000,
+        runTimeout: 10000,
+      });
+
+      const message = formatExecutionResult(result);
+      assertEquals(message, "hello\n");
+
+      // 4. composeReplyPost で返信イベント作成 → relay に publish
+      const replyEvent = composeReplyPost(
+        message,
+        receivedEvent,
+        TEST_PRIVATE_KEY,
+      );
+      await relay.publish(replyEvent);
+
+      // 5. mock relay 上で返信イベントの content を検証
+      const received = mockRelay.findEvent(replyEvent.id);
+      assertExists(received);
+      assertEquals(received!.content, "hello\n");
+    });
+  },
 });
