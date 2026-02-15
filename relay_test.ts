@@ -20,7 +20,6 @@ import {
 const TEST_PRIVATE_KEY = "a".repeat(64);
 // @nostr/tools は normalizeURL で URL を正規化する（末尾スラッシュ付与）
 const RELAY_URL = "wss://test.relay/";
-const PISTON_SERVER = Deno.env.get("PISTON_SERVER");
 
 // @nostr/tools はモジュールロード時に WebSocket をキャプチャするため、
 // pool.install() で globalThis.WebSocket を差し替えた後、
@@ -452,8 +451,13 @@ Deno.test("リレー障害 - NOTICE メッセージを受信できる", async ()
 // E2E テスト - /run コマンドの完全なフロー
 // ============================================================
 
+const hasEnvPermission =
+  (await Deno.permissions.query({ name: "env", variable: "PISTON_SERVER" }))
+    .state === "granted";
+
 Deno.test({
   name: "E2E - mock relay + Piston で /run コマンドの完全なフローを実行できる",
+  ignore: !hasEnvPermission,
   async fn() {
     await withMockRelay(async (relay, mockRelay) => {
       // 1. mock relay に /run コマンドイベントを格納
@@ -475,7 +479,8 @@ Deno.test({
       const parsed = parseRunCommand(receivedEvent.content);
       assertExists(parsed);
 
-      const client = piston({ server: PISTON_SERVER });
+      const pistonServer = Deno.env.get("PISTON_SERVER");
+      const client = piston({ server: pistonServer });
       const runtimes = await client.runtimes();
       const languages = buildLanguageMap(runtimes);
       assertExists(languages[parsed!.language]);

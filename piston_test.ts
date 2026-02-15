@@ -8,13 +8,19 @@ import {
   parseRunCommand,
 } from "./lib.ts";
 
-const PISTON_SERVER = Deno.env.get("PISTON_SERVER");
+const hasEnvPermission =
+  (await Deno.permissions.query({ name: "env", variable: "PISTON_SERVER" }))
+    .state === "granted";
+const PISTON_SERVER = hasEnvPermission
+  ? Deno.env.get("PISTON_SERVER")
+  : undefined;
 
 // ============================================================
 // Piston API 統合テスト
 // ============================================================
 
 Deno.test({
+  ignore: !hasEnvPermission,
   name: "Piston - ランタイム一覧を取得できる",
 
   async fn() {
@@ -34,6 +40,7 @@ Deno.test({
 });
 
 Deno.test({
+  ignore: !hasEnvPermission,
   name: "Piston - Python でコードを実行できる",
 
   async fn() {
@@ -59,6 +66,7 @@ Deno.test({
 });
 
 Deno.test({
+  ignore: !hasEnvPermission,
   name: "Piston - stdin を使ったコード実行ができる",
 
   async fn() {
@@ -82,6 +90,7 @@ Deno.test({
 });
 
 Deno.test({
+  ignore: !hasEnvPermission,
   name: "Piston - コマンドライン引数を使ったコード実行ができる",
 
   async fn() {
@@ -105,6 +114,7 @@ Deno.test({
 });
 
 Deno.test({
+  ignore: !hasEnvPermission,
   name: "Piston - parseRunCommand と連携してコードを実行できる",
 
   async fn() {
@@ -137,6 +147,7 @@ Deno.test({
 });
 
 Deno.test({
+  ignore: !hasEnvPermission,
   name: "Piston - 存在しない言語でエラーメッセージを返す",
 
   async fn() {
