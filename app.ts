@@ -19,7 +19,7 @@ import {
   parseRunCommand,
 } from "./lib.ts";
 
-const PISTON_SERVER = Deno.env.get("PISTON_SERVER");
+const PISTON_SERVER = Deno.env.get("PISTON_SERVER") || "https://emkc.org";
 const RELAY_URL = Deno.env.get("RELAY_URL") || "wss://yabu.me";
 const PRIVATE_KEY_HEX = Deno.env.get("PRIVATE_KEY_HEX") || "";
 const ACCEPT_DUR_SEC = 1 * 60;

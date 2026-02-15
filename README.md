@@ -50,11 +50,11 @@ Show supported languages.
 
 ### Environment Variables
 
-| Variable          | Description               | Default         |
-| ----------------- | ------------------------- | --------------- |
-| `PISTON_SERVER`   | Piston API server URL     | (required)      |
-| `RELAY_URL`       | Nostr relay WebSocket URL | `wss://yabu.me` |
-| `PRIVATE_KEY_HEX` | Nostr private key (hex)   | (required)      |
+| Variable          | Description               | Default            |
+| ----------------- | ------------------------- | ------------------ |
+| `PISTON_SERVER`   | Piston API server URL     | `https://emkc.org` |
+| `RELAY_URL`       | Nostr relay WebSocket URL | `wss://yabu.me`    |
+| `PRIVATE_KEY_HEX` | Nostr private key (hex)   | (required)         |
 
 Create a `.env` file or export the variables.
 
