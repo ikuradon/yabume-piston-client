@@ -14,12 +14,12 @@ import {
   type NostrEvent,
   parseRerunCommand,
   parseRunCommand,
+  resolveSourceRunEvent,
+  type RunCommand,
   type Runtime,
   type SubscribableRelay,
 } from "./lib.ts";
-
-// テスト用の秘密鍵（テスト専用、本番には使用しないこと）
-const TEST_PRIVATE_KEY = "a".repeat(64);
+import { TEST_PRIVATE_KEY } from "./test_helpers.ts";
 
 // ============================================================
 // buildLanguageMap
@@ -118,10 +118,12 @@ Deno.test("parseRunCommand - /run コマンドを正しくパースできる (Le
   const result = parseRunCommand(content);
 
   assertExists(result);
-  assertEquals(result!.language, "javascript");
-  assertEquals(result!.code, "console.log('hello');");
-  assertEquals(result!.args, []);
-  assertEquals(result!.stdin, "");
+  assertEquals(result.type, "run");
+  const cmd = result as RunCommand;
+  assertEquals(cmd.language, "javascript");
+  assertEquals(cmd.code, "console.log('hello');");
+  assertEquals(cmd.args, []);
+  assertEquals(cmd.stdin, "");
 });
 
 Deno.test("parseRunCommand - 複数行のコードをパースできる (Legacy)", () => {
@@ -129,10 +131,12 @@ Deno.test("parseRunCommand - 複数行のコードをパースできる (Legacy)
   const result = parseRunCommand(content);
 
   assertExists(result);
-  assertEquals(result!.language, "python");
-  assertEquals(result!.code, "print('line1')\nprint('line2')\nprint('line3')");
-  assertEquals(result!.args, []);
-  assertEquals(result!.stdin, "");
+  assertEquals(result.type, "run");
+  const cmd = result as RunCommand;
+  assertEquals(cmd.language, "python");
+  assertEquals(cmd.code, "print('line1')\nprint('line2')\nprint('line3')");
+  assertEquals(cmd.args, []);
+  assertEquals(cmd.stdin, "");
 });
 
 Deno.test("parseRunCommand - help コマンドをパースできる", () => {
@@ -140,10 +144,7 @@ Deno.test("parseRunCommand - help コマンドをパースできる", () => {
   const result = parseRunCommand(content);
 
   assertExists(result);
-  assertEquals(result!.language, "help");
-  assertEquals(result!.code, "");
-  assertEquals(result!.args, []);
-  assertEquals(result!.stdin, "");
+  assertEquals(result.type, "help");
 });
 
 Deno.test("parseRunCommand - lang コマンドをパースできる", () => {
@@ -151,10 +152,7 @@ Deno.test("parseRunCommand - lang コマンドをパースできる", () => {
   const result = parseRunCommand(content);
 
   assertExists(result);
-  assertEquals(result!.language, "lang");
-  assertEquals(result!.code, "");
-  assertEquals(result!.args, []);
-  assertEquals(result!.stdin, "");
+  assertEquals(result.type, "lang");
 });
 
 Deno.test("parseRunCommand - コードなしの場合コードが空文字列になる", () => {
@@ -162,10 +160,12 @@ Deno.test("parseRunCommand - コードなしの場合コードが空文字列に
   const result = parseRunCommand(content);
 
   assertExists(result);
-  assertEquals(result!.language, "javascript");
-  assertEquals(result!.code, "");
-  assertEquals(result!.args, []);
-  assertEquals(result!.stdin, "");
+  assertEquals(result.type, "run");
+  const cmd = result as RunCommand;
+  assertEquals(cmd.language, "javascript");
+  assertEquals(cmd.code, "");
+  assertEquals(cmd.args, []);
+  assertEquals(cmd.stdin, "");
 });
 
 Deno.test("parseRunCommand - 空文字列で null を返す", () => {
@@ -178,7 +178,9 @@ Deno.test("parseRunCommand - 言語名の前後の空白を除去する", () => 
   const result = parseRunCommand(content);
 
   assertExists(result);
-  assertEquals(result!.language, "python");
+  assertEquals(result.type, "run");
+  const cmd = result as RunCommand;
+  assertEquals(cmd.language, "python");
 });
 
 // ============================================================
@@ -362,10 +364,12 @@ Deno.test("parseRunCommand - Basic Syntax: コードブロック＋argsのみ", 
   const result = parseRunCommand(content);
 
   assertExists(result);
-  assertEquals(result!.language, "python");
-  assertEquals(result!.args, ["arg1", "arg2"]);
-  assertEquals(result!.code, "print('hello')");
-  assertEquals(result!.stdin, "");
+  assertEquals(result.type, "run");
+  const cmd = result as RunCommand;
+  assertEquals(cmd.language, "python");
+  assertEquals(cmd.args, ["arg1", "arg2"]);
+  assertEquals(cmd.code, "print('hello')");
+  assertEquals(cmd.stdin, "");
 });
 
 Deno.test("parseRunCommand - Basic Syntax: コードブロック＋args＋stdin", () => {
@@ -374,10 +378,12 @@ Deno.test("parseRunCommand - Basic Syntax: コードブロック＋args＋stdin"
   const result = parseRunCommand(content);
 
   assertExists(result);
-  assertEquals(result!.language, "python");
-  assertEquals(result!.args, ["arg1", "arg2"]);
-  assertEquals(result!.code, "print(input())");
-  assertEquals(result!.stdin, "hello world");
+  assertEquals(result.type, "run");
+  const cmd = result as RunCommand;
+  assertEquals(cmd.language, "python");
+  assertEquals(cmd.args, ["arg1", "arg2"]);
+  assertEquals(cmd.code, "print(input())");
+  assertEquals(cmd.stdin, "hello world");
 });
 
 Deno.test("parseRunCommand - Basic Syntax: コードブロック＋stdinのみ（argsなし）", () => {
@@ -385,10 +391,12 @@ Deno.test("parseRunCommand - Basic Syntax: コードブロック＋stdinのみ�
   const result = parseRunCommand(content);
 
   assertExists(result);
-  assertEquals(result!.language, "python");
-  assertEquals(result!.args, []);
-  assertEquals(result!.code, "print(input())");
-  assertEquals(result!.stdin, "test input");
+  assertEquals(result.type, "run");
+  const cmd = result as RunCommand;
+  assertEquals(cmd.language, "python");
+  assertEquals(cmd.args, []);
+  assertEquals(cmd.code, "print(input())");
+  assertEquals(cmd.stdin, "test input");
 });
 
 Deno.test("parseRunCommand - Basic Syntax: コードブロックのみ（args/stdinなし）", () => {
@@ -396,10 +404,12 @@ Deno.test("parseRunCommand - Basic Syntax: コードブロックのみ（args/st
   const result = parseRunCommand(content);
 
   assertExists(result);
-  assertEquals(result!.language, "python");
-  assertEquals(result!.args, []);
-  assertEquals(result!.code, "print('hello')");
-  assertEquals(result!.stdin, "");
+  assertEquals(result.type, "run");
+  const cmd = result as RunCommand;
+  assertEquals(cmd.language, "python");
+  assertEquals(cmd.args, []);
+  assertEquals(cmd.code, "print('hello')");
+  assertEquals(cmd.stdin, "");
 });
 
 Deno.test("parseRunCommand - Basic Syntax: 複数行コード", () => {
@@ -407,10 +417,12 @@ Deno.test("parseRunCommand - Basic Syntax: 複数行コード", () => {
   const result = parseRunCommand(content);
 
   assertExists(result);
-  assertEquals(result!.language, "python");
-  assertEquals(result!.code, "for i in range(3):\n    print(i)");
-  assertEquals(result!.args, []);
-  assertEquals(result!.stdin, "");
+  assertEquals(result.type, "run");
+  const cmd = result as RunCommand;
+  assertEquals(cmd.language, "python");
+  assertEquals(cmd.code, "for i in range(3):\n    print(i)");
+  assertEquals(cmd.args, []);
+  assertEquals(cmd.stdin, "");
 });
 
 // ============================================================
@@ -450,4 +462,136 @@ Deno.test("parseRerunCommand - 複数行stdin", () => {
 
   assertEquals(result.args, []);
   assertEquals(result.stdin, "line1\nline2\nline3");
+});
+
+// ============================================================
+// resolveSourceRunEvent
+// ============================================================
+
+Deno.test("resolveSourceRunEvent - チェーンをたどって /run イベントを発見できる", async () => {
+  const runEvent = {
+    id: "run1",
+    content: "/run python\nprint('hi')",
+    tags: [],
+  } as unknown as NostrEvent;
+  const replyEvent = {
+    id: "reply1",
+    content: "hi\n",
+    tags: [["e", "run1"]],
+  } as unknown as NostrEvent;
+  const rerunEvent = {
+    id: "rerun1",
+    content: "/rerun",
+    tags: [["e", "reply1"]],
+  } as unknown as NostrEvent;
+
+  const events: Record<string, NostrEvent> = {
+    "run1": runEvent,
+    "reply1": replyEvent,
+  };
+
+  const mockRelay: SubscribableRelay = {
+    subscribe(filters, callbacks) {
+      const id = (filters[0] as { ids: string[] }).ids[0];
+      queueMicrotask(() => {
+        if (events[id]) callbacks.onevent(events[id]);
+        callbacks.oneose();
+      });
+      return { close() {} };
+    },
+  };
+
+  const result = await resolveSourceRunEvent(mockRelay, rerunEvent);
+  assertExists(result);
+  assertEquals(result!.id, "run1");
+  assertEquals(result!.content, "/run python\nprint('hi')");
+});
+
+Deno.test("resolveSourceRunEvent - e タグなしで null を返す", async () => {
+  const event = {
+    id: "ev1",
+    content: "/rerun",
+    tags: [],
+  } as unknown as NostrEvent;
+
+  const mockRelay: SubscribableRelay = {
+    subscribe(_filters, callbacks) {
+      queueMicrotask(() => callbacks.oneose());
+      return { close() {} };
+    },
+  };
+
+  const result = await resolveSourceRunEvent(mockRelay, event);
+  assertEquals(result, null);
+});
+
+Deno.test("resolveSourceRunEvent - maxHops 超過で null を返す", async () => {
+  // 各イベントが次のイベントを参照する長いチェーン（/run に到達しない）
+  const events: Record<string, NostrEvent> = {};
+  for (let i = 0; i < 15; i++) {
+    events[`ev${i}`] = {
+      id: `ev${i}`,
+      content: `reply ${i}`,
+      tags: i > 0 ? [["e", `ev${i - 1}`]] : [],
+    } as unknown as NostrEvent;
+  }
+
+  const startEvent = {
+    id: "start",
+    content: "/rerun",
+    tags: [["e", "ev14"]],
+  } as unknown as NostrEvent;
+
+  const mockRelay: SubscribableRelay = {
+    subscribe(filters, callbacks) {
+      const id = (filters[0] as { ids: string[] }).ids[0];
+      queueMicrotask(() => {
+        if (events[id]) callbacks.onevent(events[id]);
+        callbacks.oneose();
+      });
+      return { close() {} };
+    },
+  };
+
+  const result = await resolveSourceRunEvent(mockRelay, startEvent, 3);
+  assertEquals(result, null);
+});
+
+Deno.test("resolveSourceRunEvent - 循環参照で null を返す", async () => {
+  // A -> B -> A の循環
+  const eventA = {
+    id: "a",
+    content: "reply a",
+    tags: [["e", "b"]],
+  } as unknown as NostrEvent;
+  const eventB = {
+    id: "b",
+    content: "reply b",
+    tags: [["e", "a"]],
+  } as unknown as NostrEvent;
+
+  const startEvent = {
+    id: "start",
+    content: "/rerun",
+    tags: [["e", "a"]],
+  } as unknown as NostrEvent;
+
+  const events: Record<string, NostrEvent> = {
+    "a": eventA,
+    "b": eventB,
+  };
+
+  const mockRelay: SubscribableRelay = {
+    subscribe(filters, callbacks) {
+      const id = (filters[0] as { ids: string[] }).ids[0];
+      queueMicrotask(() => {
+        if (events[id]) callbacks.onevent(events[id]);
+        callbacks.oneose();
+      });
+      return { close() {} };
+    },
+  };
+
+  const result = await resolveSourceRunEvent(mockRelay, startEvent);
+  assertEquals(result, null);
 });

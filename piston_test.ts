@@ -1,19 +1,13 @@
 import { assertEquals, assertExists } from "@std/assert";
-import piston from "piston-client";
 
 import {
   buildLanguageMap,
   buildScript,
   formatExecutionResult,
   parseRunCommand,
+  type RunCommand,
 } from "./lib.ts";
-
-const hasEnvPermission =
-  (await Deno.permissions.query({ name: "env", variable: "PISTON_SERVER" }))
-    .state === "granted";
-const PISTON_SERVER = hasEnvPermission
-  ? Deno.env.get("PISTON_SERVER")
-  : undefined;
+import { createPistonClient, hasEnvPermission } from "./test_helpers.ts";
 
 // ============================================================
 // Piston API 統合テスト
@@ -24,7 +18,7 @@ Deno.test({
   name: "Piston - ランタイム一覧を取得できる",
 
   async fn() {
-    const client = piston({ server: PISTON_SERVER });
+    const client = createPistonClient();
     const runtimes = await client.runtimes();
 
     assertExists(runtimes);
@@ -44,7 +38,7 @@ Deno.test({
   name: "Piston - Python でコードを実行できる",
 
   async fn() {
-    const client = piston({ server: PISTON_SERVER });
+    const client = createPistonClient();
     const runtimes = await client.runtimes();
     const languages = buildLanguageMap(runtimes);
 
@@ -70,7 +64,7 @@ Deno.test({
   name: "Piston - stdin を使ったコード実行ができる",
 
   async fn() {
-    const client = piston({ server: PISTON_SERVER });
+    const client = createPistonClient();
     const runtimes = await client.runtimes();
     const languages = buildLanguageMap(runtimes);
 
@@ -94,7 +88,7 @@ Deno.test({
   name: "Piston - コマンドライン引数を使ったコード実行ができる",
 
   async fn() {
-    const client = piston({ server: PISTON_SERVER });
+    const client = createPistonClient();
     const runtimes = await client.runtimes();
     const languages = buildLanguageMap(runtimes);
 
@@ -118,25 +112,26 @@ Deno.test({
   name: "Piston - parseRunCommand と連携してコードを実行できる",
 
   async fn() {
-    const client = piston({ server: PISTON_SERVER });
+    const client = createPistonClient();
     const runtimes = await client.runtimes();
     const languages = buildLanguageMap(runtimes);
 
     const content = "/run python\n```\nprint(2 + 3)\n```";
     const parsed = parseRunCommand(content);
     assertExists(parsed);
+    assertEquals(parsed.type, "run");
+    const cmd = parsed as RunCommand;
 
-    const lang = parsed!.language;
-    assertExists(languages[lang]);
+    assertExists(languages[cmd.language]);
 
-    const script = buildScript(parsed!.code, languages, lang);
+    const script = buildScript(cmd.code, languages, cmd.language);
 
     const result = await client.execute({
-      language: languages[lang].language,
-      version: languages[lang].version,
+      language: languages[cmd.language].language,
+      version: languages[cmd.language].version,
       files: [script],
-      args: parsed!.args,
-      stdin: parsed!.stdin,
+      args: cmd.args,
+      stdin: cmd.stdin,
       compileTimeout: 10000,
       runTimeout: 10000,
     });
@@ -151,7 +146,7 @@ Deno.test({
   name: "Piston - 存在しない言語でエラーメッセージを返す",
 
   async fn() {
-    const client = piston({ server: PISTON_SERVER });
+    const client = createPistonClient();
 
     const result = await client.execute({
       language: "nonexistent_language",

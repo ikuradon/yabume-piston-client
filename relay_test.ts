@@ -2,7 +2,6 @@ import { assertEquals, assertExists } from "@std/assert";
 import { Relay, useWebSocketImplementation } from "@nostr/tools/relay";
 import { MockPool } from "@ikuradon/tsunagiya";
 import { EventBuilder } from "@ikuradon/tsunagiya/testing";
-import piston from "piston-client";
 
 import {
   buildLanguageMap,
@@ -12,12 +11,17 @@ import {
   getSourceEvent,
   type NostrEvent,
   parseRunCommand,
+  resolveSourceRunEvent,
+  type RunCommand,
   type SubscribableRelay,
   type Subscription,
 } from "./lib.ts";
+import {
+  createPistonClient,
+  hasEnvPermission,
+  TEST_PRIVATE_KEY,
+} from "./test_helpers.ts";
 
-// テスト用の秘密鍵（テスト専用、本番には使用しないこと）
-const TEST_PRIVATE_KEY = "a".repeat(64);
 // @nostr/tools は normalizeURL で URL を正規化する（末尾スラッシュ付与）
 const RELAY_URL = "wss://test.relay/";
 
@@ -190,7 +194,7 @@ Deno.test("getSourceEvent (relay) - 返信チェーンをたどって元の /run
   });
 });
 
-Deno.test("getSourceEvent (relay) - /rerun チェーン全体をたどって元の /run に到達できる", async () => {
+Deno.test("resolveSourceRunEvent (relay) - /rerun チェーン全体をたどって元の /run に到達できる", async () => {
   await withMockRelay(async (relay, mockRelay) => {
     // 元の /run コマンド
     const runEvent = EventBuilder.kind1()
@@ -215,13 +219,10 @@ Deno.test("getSourceEvent (relay) - /rerun チェーン全体をたどって元�
     mockRelay.store(botReply);
     mockRelay.store(rerunEvent);
 
-    // app.ts の /rerun ロジックをシミュレート
-    let sourceEvent: NostrEvent | null = rerunEvent as NostrEvent;
-    while (true) {
-      sourceEvent = await getSourceEvent(relay, sourceEvent!);
-      if (sourceEvent === null) break;
-      if (sourceEvent.content.startsWith("/run")) break;
-    }
+    const sourceEvent = await resolveSourceRunEvent(
+      relay,
+      rerunEvent as NostrEvent,
+    );
 
     assertExists(sourceEvent);
     assertEquals(sourceEvent!.content, "/run python\nprint('hello')");
@@ -451,10 +452,6 @@ Deno.test("リレー障害 - NOTICE メッセージを受信できる", async ()
 // E2E テスト - /run コマンドの完全なフロー
 // ============================================================
 
-const hasEnvPermission =
-  (await Deno.permissions.query({ name: "env", variable: "PISTON_SERVER" }))
-    .state === "granted";
-
 Deno.test({
   name: "E2E - mock relay + Piston で /run コマンドの完全なフローを実行できる",
   ignore: !hasEnvPermission,
@@ -478,20 +475,21 @@ Deno.test({
       // 3. parseRunCommand → buildScript → piston execute → formatExecutionResult
       const parsed = parseRunCommand(receivedEvent.content);
       assertExists(parsed);
+      assertEquals(parsed.type, "run");
+      const cmd = parsed as RunCommand;
 
-      const pistonServer = Deno.env.get("PISTON_SERVER");
-      const client = piston({ server: pistonServer });
+      const client = createPistonClient();
       const runtimes = await client.runtimes();
       const languages = buildLanguageMap(runtimes);
-      assertExists(languages[parsed!.language]);
+      assertExists(languages[cmd.language]);
 
-      const script = buildScript(parsed!.code, languages, parsed!.language);
+      const script = buildScript(cmd.code, languages, cmd.language);
       const result = await client.execute({
-        language: languages[parsed!.language].language,
-        version: languages[parsed!.language].version,
+        language: languages[cmd.language].language,
+        version: languages[cmd.language].version,
         files: [script],
-        args: parsed!.args,
-        stdin: parsed!.stdin,
+        args: cmd.args,
+        stdin: cmd.stdin,
         compileTimeout: 10000,
         runTimeout: 10000,
       });

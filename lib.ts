@@ -28,6 +28,19 @@ export interface PistonResult {
   message?: string;
 }
 
+export interface RunCommand {
+  type: "run";
+  language: string;
+  code: string;
+  args: string[];
+  stdin: string;
+}
+
+export type ParsedRunCommand =
+  | RunCommand
+  | { type: "help" }
+  | { type: "lang" };
+
 export interface Subscription {
   close(): void;
 }
@@ -96,10 +109,14 @@ export const buildLanguageListMessage = (
 
 export const parseRunCommand = (
   content: string,
-): { language: string; args: string[]; code: string; stdin: string } | null => {
+): ParsedRunCommand | null => {
   const contentArray = content.match(/[^\r\n]+/g);
   if (!contentArray || contentArray.length === 0) return null;
   const language = contentArray.shift()!.replace("/run", "").trim();
+
+  if (language === "help") return { type: "help" };
+  if (language === "lang") return { type: "lang" };
+
   const rest = contentArray.join("\n");
 
   // Basic Syntax: コードブロック(```)が2つある場合
@@ -112,11 +129,11 @@ export const parseRunCommand = (
       .filter((line) => line.trim() !== "");
     const code = parts[1].replace(/^\n/, "").replace(/\n$/, "");
     const stdin = parts.slice(2).join("```").replace(/^\n/, "");
-    return { language, args, code, stdin };
+    return { type: "run", language, args, code, stdin };
   }
 
   // Legacy Syntax: コードブロックなし（後方互換）
-  return { language, args: [], code: rest, stdin: "" };
+  return { type: "run", language, args: [], code: rest, stdin: "" };
 };
 
 export const parseRerunCommand = (
@@ -177,6 +194,28 @@ export const composeReplyPost = (
   };
 
   return finalizeEvent(ev, hexToBytes(privateKeyHex));
+};
+
+export const resolveSourceRunEvent = async (
+  relay: SubscribableRelay,
+  event: NostrEvent,
+  maxHops = 10,
+  onHop?: (event: NostrEvent) => void,
+): Promise<NostrEvent | null> => {
+  const visited = new Set<string>([event.id]);
+  let current: NostrEvent = event;
+
+  for (let i = 0; i < maxHops; i++) {
+    const next = await getSourceEvent(relay, current);
+    if (next === null) return null;
+    if (visited.has(next.id)) return null; // 循環検出
+    visited.add(next.id);
+    onHop?.(next);
+    if (next.content.startsWith("/run")) return next;
+    current = next;
+  }
+
+  return null; // maxHops 超過
 };
 
 export const getSourceEvent = async (
