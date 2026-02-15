@@ -159,6 +159,7 @@
       "jsr:@nostr/tools@^2.23.1",
       "jsr:@std/assert@1",
       "jsr:@std/dotenv@0.225",
+      "jsr:@std/log@0.224",
       "npm:piston-client@^1.0.2"
     ]
   }

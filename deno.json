@@ -10,6 +10,7 @@
     "@noble/hashes": "jsr:@noble/hashes@^2.0.1",
     "piston-client": "npm:piston-client@^1.0.2",
     "@ikuradon/tsunagiya": "jsr:@ikuradon/tsunagiya@^0.1.0",
-    "@ikuradon/tsunagiya/testing": "jsr:@ikuradon/tsunagiya@^0.1.0/testing"
+    "@ikuradon/tsunagiya/testing": "jsr:@ikuradon/tsunagiya@^0.1.0/testing",
+    "@std/log": "jsr:@std/log@^0.224.0"
   }
 }
