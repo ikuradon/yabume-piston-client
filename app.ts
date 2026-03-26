@@ -4,22 +4,18 @@ import { getPublicKey } from "@nostr/tools/pure";
 import { Relay } from "@nostr/tools/relay";
 import { hexToBytes } from "@noble/hashes/utils.js";
 
-import piston from "piston-client";
-
 import { loadConfig } from "./config.ts";
+import { parseRerunCommand, parseRunCommand } from "./commands.ts";
 import {
   buildHelpMessage,
   buildLanguageListMessage,
   buildLanguageMap,
   buildScript,
-  composeReplyPost,
   formatExecutionResult,
-  type NostrEvent,
-  parseRerunCommand,
-  parseRunCommand,
-  resolveSourceRunEvent,
-  type RunCommand,
-} from "./lib.ts";
+} from "./format.ts";
+import { composeReplyPost, resolveSourceRunEvent } from "./nostr.ts";
+import { createPistonClient } from "./piston.ts";
+import type { NostrEvent, RunCommand } from "./types.ts";
 import { logger } from "./logger.ts";
 
 const unixNow = () => Math.floor(Date.now() / 1000);
@@ -31,7 +27,7 @@ try {
     `Starting... piston=${config.pistonServer} relay=${config.relayUrl}`,
   );
 
-  const pistonClient = piston({ server: config.pistonServer });
+  const pistonClient = createPistonClient(config.pistonServer);
   const runtimes = await pistonClient.runtimes();
   const languages = buildLanguageMap(runtimes);
   const helpMessage = buildHelpMessage();
@@ -63,12 +59,16 @@ try {
     return formatExecutionResult(result);
   };
 
-  const dispatchRunCommand = async (content: string): Promise<string> => {
+  const dispatchRunCommand = async (
+    content: string,
+    argsOverride?: string[],
+    stdinOverride?: string,
+  ): Promise<string> => {
     const parsed = parseRunCommand(content);
     if (!parsed) return "Execution error";
     if (parsed.type === "help") return helpMessage;
     if (parsed.type === "lang") return buildLanguageListMessage(languages);
-    return await executePiston(parsed);
+    return await executePiston(parsed, argsOverride, stdinOverride);
   };
 
   const publishToRelay = async (relay: Relay, ev: NostrEvent) => {
@@ -81,6 +81,7 @@ try {
   };
 
   const secretKey = hexToBytes(config.privateKeyHex);
+  const myPubkey = getPublicKey(secretKey);
   const relay = await Relay.connect(config.relayUrl);
 
   logger.info(`Connected to relay: ${config.relayUrl}`);
@@ -88,7 +89,7 @@ try {
   relay.subscribe([{ kinds: [1], since: unixNow() }], {
     async onevent(ev: NostrEvent) {
       if (ev.created_at < unixNow() - config.acceptDurSec) return;
-      if (ev.pubkey === getPublicKey(secretKey)) return; // 自分の投稿は無視する
+      if (ev.pubkey === myPubkey) return;
 
       if (ev.content.startsWith("/run")) {
         logger.info(
@@ -117,23 +118,14 @@ try {
               }`,
             );
           },
+          config.eventFetchTimeout,
         );
         if (sourceEvent !== null) {
-          const parsed = parseRunCommand(sourceEvent.content);
-          let message: string;
-          if (!parsed) {
-            message = "Execution error";
-          } else if (parsed.type === "help") {
-            message = helpMessage;
-          } else if (parsed.type === "lang") {
-            message = buildLanguageListMessage(languages);
-          } else {
-            message = await executePiston(
-              parsed,
-              args.length > 0 ? args : undefined,
-              stdin !== "" ? stdin : undefined,
-            );
-          }
+          const message = await dispatchRunCommand(
+            sourceEvent.content,
+            args.length > 0 ? args : undefined,
+            stdin !== "" ? stdin : undefined,
+          );
           const replyPost = composeReplyPost(
             message,
             ev,
