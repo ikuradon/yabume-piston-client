@@ -17,7 +17,7 @@ import {
   type Subscription,
 } from "./lib.ts";
 import {
-  createPistonClient,
+  createTestPistonClient,
   hasEnvPermission,
   TEST_PRIVATE_KEY,
 } from "./test_helpers.ts";
@@ -478,7 +478,7 @@ Deno.test({
       assertEquals(parsed.type, "run");
       const cmd = parsed as RunCommand;
 
-      const client = createPistonClient();
+      const client = createTestPistonClient();
       const runtimes = await client.runtimes();
       const languages = buildLanguageMap(runtimes);
       assertExists(languages[cmd.language]);
@@ -491,7 +491,7 @@ Deno.test({
         args: cmd.args,
         stdin: cmd.stdin,
         compileTimeout: 10000,
-        runTimeout: 10000,
+        runTimeout: 3000,
       });
 
       const message = formatExecutionResult(result);
